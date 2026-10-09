@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using foxtrot_store_backend.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace foxtrot_store_backend.Data
 {
@@ -6,6 +7,20 @@ namespace foxtrot_store_backend.Data
         DbContextOptions<DataContext> options
         ) : DbContext(options)
     {
-        public DbSet<Entities.Product> Products => Set<Entities.Product>();
+        public DbSet<Product> Products => Set<Product>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<Product>(entity =>
+            {
+                entity.HasIndex(product => product.Sku)
+                    .IsUnique();
+
+                entity.HasIndex(product => product.Slug)
+                    .IsUnique();
+            });
+        }
     }
 }
