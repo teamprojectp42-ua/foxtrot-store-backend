@@ -7,10 +7,10 @@ namespace foxtrot_store_backend.Data;
 public class DataContext(DbContextOptions<DataContext> options) : DbContext(options)
 {
     public DbSet<Product> Products => Set<Product>();
+    public DbSet<Category> Categories => Set<Category>();
+    public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
 
     public DbSet<Brand> Brands => Set<Brand>();
-
-    public DbSet<Category> Categories => Set<Category>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,6 +70,21 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
                 .WithMany(category => category.ChildCategories)
                 .HasForeignKey(category => category.ParentCategoryId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ProductCategory>(entity =>
+        {
+            entity.HasKey(pc => new { pc.ProductId, pc.CategoryId });
+
+            entity.HasOne(pc => pc.Product)
+                .WithMany(product => product.ProductCategories)
+                .HasForeignKey(pc => pc.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pc => pc.Category)
+                .WithMany(category => category.ProductCategories)
+                .HasForeignKey(pc => pc.CategoryId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

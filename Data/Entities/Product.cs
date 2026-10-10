@@ -26,4 +26,7 @@ public class Product
 
 
     public Brand? Brand { get; set; }
+
+    public ICollection<ProductCategory> ProductCategories { get; set; }
+        = new List<ProductCategory>();       
 }

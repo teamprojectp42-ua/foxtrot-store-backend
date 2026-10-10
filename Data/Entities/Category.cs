@@ -19,5 +19,9 @@ public class Category
 
     public Category? ParentCategory { get; set; }
 
+
     public ICollection<Category> ChildCategories { get; set; } = new List<Category>();
+
+    public ICollection<ProductCategory> ProductCategories { get; set; }
+    = new List<ProductCategory>();
 }
