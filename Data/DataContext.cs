@@ -10,6 +10,8 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
 
     public DbSet<Brand> Brands => Set<Brand>();
 
+    public DbSet<Category> Categories => Set<Category>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -46,6 +48,28 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
 
             entity.HasIndex(brand => brand.Slug)
                 .IsUnique();
+        });
+
+        modelBuilder.Entity<Category>(entity =>
+        {
+            entity.Property(category => category.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(category => category.Slug)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(category => category.Description)
+                .HasMaxLength(1000);
+
+            entity.HasIndex(category => category.Slug)
+                .IsUnique();
+
+            entity.HasOne(category => category.ParentCategory)
+                .WithMany(category => category.ChildCategories)
+                .HasForeignKey(category => category.ParentCategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }
