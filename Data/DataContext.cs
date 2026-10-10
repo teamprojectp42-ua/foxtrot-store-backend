@@ -1,26 +1,51 @@
-﻿using foxtrot_store_backend.Data.Entities;
+﻿
+using foxtrot_store_backend.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace foxtrot_store_backend.Data
+namespace foxtrot_store_backend.Data;
+
+public class DataContext(DbContextOptions<DataContext> options) : DbContext(options)
 {
-    public class DataContext(
-        DbContextOptions<DataContext> options
-        ) : DbContext(options)
+    public DbSet<Product> Products => Set<Product>();
+
+    public DbSet<Brand> Brands => Set<Brand>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        public DbSet<Product> Products => Set<Product>();
+        base.OnModelCreating(modelBuilder);
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        modelBuilder.Entity<Product>(entity =>
         {
-            base.OnModelCreating(modelBuilder);
+            entity.HasIndex(product => product.Sku)
+                .IsUnique();
 
-            modelBuilder.Entity<Product>(entity =>
-            {
-                entity.HasIndex(product => product.Sku)
-                    .IsUnique();
+            entity.HasIndex(product => product.Slug)
+                .IsUnique();
 
-                entity.HasIndex(product => product.Slug)
-                    .IsUnique();
-            });
-        }
+            entity.HasOne(product => product.Brand)
+                .WithMany(brand => brand.Products)
+                .HasForeignKey(product => product.BrandId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<Brand>(entity =>
+        {
+            entity.Property(brand => brand.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(brand => brand.Slug)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(brand => brand.Description)
+                .HasMaxLength(1000);
+
+            entity.Property(brand => brand.LogoUrl)
+                .HasMaxLength(2048);
+
+            entity.HasIndex(brand => brand.Slug)
+                .IsUnique();
+        });
     }
 }
