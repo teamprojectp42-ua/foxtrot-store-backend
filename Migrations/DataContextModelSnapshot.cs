@@ -188,6 +188,38 @@ namespace foxtrot_store_backend.Migrations
                     b.ToTable("ProductImages");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "Name")
+                        .IsUnique();
+
+                    b.HasIndex("ProductId", "SortOrder");
+
+                    b.ToTable("ProductSpecifications");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
                 {
                     b.HasOne("foxtrot_store_backend.Data.Entities.Category", "ParentCategory")
@@ -238,6 +270,17 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecification", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Product", "Product")
+                        .WithMany("Specifications")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Brand", b =>
                 {
                     b.Navigation("Products");
@@ -255,6 +298,8 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("Images");
 
                     b.Navigation("ProductCategories");
+
+                    b.Navigation("Specifications");
                 });
 #pragma warning restore 612, 618
         }

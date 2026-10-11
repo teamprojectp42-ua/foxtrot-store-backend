@@ -10,6 +10,8 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<ProductSpecification> ProductSpecifications
+        => Set<ProductSpecification>();
 
     public DbSet<Brand> Brands => Set<Brand>();
 
@@ -104,6 +106,34 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
                 .WithMany(product => product.Images)
                 .HasForeignKey(image => image.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductSpecification>(entity =>
+        {
+            entity.Property(specification => specification.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(specification => specification.Value)
+                .HasMaxLength(1000)
+                .IsRequired();
+
+            entity.HasIndex(specification => new
+            {
+                specification.ProductId,
+                specification.SortOrder
+            });
+
+            entity.HasOne(specification => specification.Product)
+                .WithMany(product => product.Specifications)
+                .HasForeignKey(specification => specification.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(specification => new
+            {
+                specification.ProductId,
+                specification.Name
+            }).IsUnique();
         });
     }
 }

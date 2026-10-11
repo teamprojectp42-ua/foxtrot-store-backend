@@ -22,4 +22,7 @@ public class Product
 
     public ICollection<ProductImage> Images { get; set; }
     = new List<ProductImage>();
+
+    public ICollection<ProductSpecification> Specifications { get; set; }
+    = new List<ProductSpecification>();
 }
