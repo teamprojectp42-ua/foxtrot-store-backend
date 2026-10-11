@@ -161,6 +161,33 @@ namespace foxtrot_store_backend.Migrations
                     b.ToTable("ProductCategories");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductImage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("varchar(2048)");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "SortOrder");
+
+                    b.ToTable("ProductImages");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
                 {
                     b.HasOne("foxtrot_store_backend.Data.Entities.Category", "ParentCategory")
@@ -200,6 +227,17 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductImage", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Product", "Product")
+                        .WithMany("Images")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Brand", b =>
                 {
                     b.Navigation("Products");
@@ -214,6 +252,8 @@ namespace foxtrot_store_backend.Migrations
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Product", b =>
                 {
+                    b.Navigation("Images");
+
                     b.Navigation("ProductCategories");
                 });
 #pragma warning restore 612, 618

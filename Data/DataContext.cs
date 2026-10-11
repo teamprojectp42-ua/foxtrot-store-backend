@@ -9,6 +9,7 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
+    public DbSet<ProductImage> ProductImages => Set<ProductImage>();
 
     public DbSet<Brand> Brands => Set<Brand>();
 
@@ -84,6 +85,24 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
             entity.HasOne(pc => pc.Category)
                 .WithMany(category => category.ProductCategories)
                 .HasForeignKey(pc => pc.CategoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProductImage>(entity =>
+        {
+            entity.Property(image => image.ImageUrl)
+                .HasMaxLength(2048)
+                .IsRequired();
+
+            entity.HasIndex(image => new
+            {
+                image.ProductId,
+                image.SortOrder
+            });
+
+            entity.HasOne(image => image.Product)
+                .WithMany(product => product.Images)
+                .HasForeignKey(image => image.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
