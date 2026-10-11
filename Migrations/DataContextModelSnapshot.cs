@@ -51,7 +51,7 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Brands");
+                    b.ToTable("Brands", (string)null);
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
@@ -90,7 +90,7 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Categories");
+                    b.ToTable("Categories", (string)null);
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Product", b =>
@@ -143,7 +143,7 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Products");
+                    b.ToTable("Products", (string)null);
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductCategory", b =>
@@ -158,7 +158,7 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.ToTable("ProductCategories");
+                    b.ToTable("ProductCategories", (string)null);
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductImage", b =>
@@ -185,7 +185,7 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasIndex("ProductId", "SortOrder");
 
-                    b.ToTable("ProductImages");
+                    b.ToTable("ProductImages", (string)null);
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecification", b =>
@@ -217,7 +217,7 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasIndex("ProductId", "SortOrder");
 
-                    b.ToTable("ProductSpecifications");
+                    b.ToTable("ProductSpecifications", (string)null);
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>

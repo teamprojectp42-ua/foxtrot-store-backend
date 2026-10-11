@@ -79,6 +79,8 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
         {
             entity.HasKey(pc => new { pc.ProductId, pc.CategoryId });
 
+            entity.HasIndex(pc => pc.CategoryId);
+
             entity.HasOne(pc => pc.Product)
                 .WithMany(product => product.ProductCategories)
                 .HasForeignKey(pc => pc.ProductId)
