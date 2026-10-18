@@ -16,6 +16,13 @@ public class RestStatus
         Message = "OK"
     };
 
+    public static readonly RestStatus Created = new()
+    {
+        IsOk = true,
+        Code = 201,
+        Message = "Created"
+    };
+
     public static readonly RestStatus BadRequest = new()
     {
         IsOk = false,

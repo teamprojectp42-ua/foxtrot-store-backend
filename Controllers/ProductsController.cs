@@ -237,7 +237,7 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
 
             var response = new RestResponse
             {
-                Status = RestStatus.Ok,
+                Status = RestStatus.Created,
                 Meta = new RestMeta
                 {
                     ApiName = "Product",

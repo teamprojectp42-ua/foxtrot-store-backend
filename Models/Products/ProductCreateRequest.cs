@@ -21,7 +21,7 @@ public class ProductCreateRequest
     [StringLength(5000)]
     public string Description { get; set; } = string.Empty;
 
-    [Range(typeof(decimal), "0.01", "999999999")]
+    [Range(0.01, 999999999)]
     public decimal Price { get; set; }
 
     [Range(0, int.MaxValue)]
