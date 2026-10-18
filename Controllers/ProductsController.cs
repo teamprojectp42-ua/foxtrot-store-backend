@@ -1,7 +1,7 @@
 ﻿
 using foxtrot_store_backend.Data;
-using foxtrot_store_backend.Data.Entities;
 using foxtrot_store_backend.Models.Products;
+using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
 
 namespace foxtrot_store_backend.Controllers;
@@ -84,12 +84,53 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
 
         if (!ModelState.IsValid)
         {
-            return ValidationProblem(ModelState);
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "Products",
+                    DataType = "application/json",
+                    Manipulations = ["GET"],
+                    Links = { ["self"] = "/api/products" }
+                },
+                Data = ModelState
+                    .Where(entry => entry.Value?.Errors.Count > 0)
+                    .ToDictionary(
+                        entry => entry.Key,
+                        entry => entry.Value!.Errors
+                            .Select(error => error.ErrorMessage)
+                            .ToArray())
+            });
         }
 
         var result = await _dataAccessor.GetProductsAsync(query);
 
-        return Ok(result);
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Meta = new RestMeta
+            {
+                ApiName = "Products",
+                DataType = "json/array",
+                CacheTime = 0,
+                Manipulations = ["GET"],
+                Links = { ["self"] = "/api/products" },
+                Pagination = new RestMetaPagination
+                {
+                    Page = result.Page,
+                    PageSize = result.PageSize,
+                    TotalPages = result.TotalPages,
+                    TotalItems = result.TotalCount
+                },
+                Parameters = new Dictionary<string, object>
+                {
+                    ["sortBy"] = query.SortBy,
+                    ["sortDirection"] = query.SortDirection
+                }
+            },
+            Data = result.Items
+        });
     }
 
     [HttpGet("{id:guid}")]
@@ -99,13 +140,35 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
 
         if (product is null)
         {
-            return NotFound(new
+            return NotFound(new RestResponse
             {
-                message = "Product not found."
+                Status = RestStatus.NotFound,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    Links = { ["self"] = $"/api/products/{id}" }
+                },
+                Data = new { message = "Product not found." }
             });
         }
 
-        return Ok(product);
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Meta = new RestMeta
+            {
+                ApiName = "Product",
+                DataType = "json/object",
+                CacheTime = 0,
+                Manipulations = ["GET"],
+                Links =
+                {
+                    ["parent"] = "/api/products",
+                    ["self"] = $"/api/products/{id}"
+                }
+            },
+            Data = product
+        });
     }
 
     [HttpGet("slug/{slug}")]
@@ -113,9 +176,18 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(slug) || slug.Length > 150)
         {
-            return BadRequest(new
+            return BadRequest(new RestResponse
             {
-                message = "Slug must contain between 1 and 150 characters."
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    Links = { ["self"] = $"/api/products/slug/{slug}" }
+                },
+                Data = new
+                {
+                    message = "Slug must contain between 1 and 150 characters."
+                }
             });
         }
 
@@ -123,33 +195,96 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
 
         if (product is null)
         {
-            return NotFound(new
+            return NotFound(new RestResponse
             {
-                message = "Product not found."
+                Status = RestStatus.NotFound,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    Links = { ["self"] = $"/api/products/slug/{slug}" }
+                },
+                Data = new { message = "Product not found." }
             });
         }
 
-        return Ok(product);
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Meta = new RestMeta
+            {
+                ApiName = "Product",
+                DataType = "json/object",
+                CacheTime = 0,
+                Manipulations = ["GET"],
+                Links =
+                {
+                    ["parent"] = "/api/products",
+                    ["self"] = $"/api/products/slug/{slug}"
+                }
+            },
+            Data = product
+        });
     }
 
     [HttpPost]
     public async Task<IActionResult> CreateProduct(
-        ProductCreateRequest request)
+        [FromBody] ProductCreateRequest request)
     {
-        var product = new Product
+        try
         {
-            Id = Guid.NewGuid(),
-            Name = request.Name,
-            Price = request.Price,
-            Description = request.Description,
-            StockQuantity = request.StockQuantity
-        };
+            var createdProduct =
+                await _dataAccessor.CreateProductAsync(request);
 
-        var createdProduct = await _dataAccessor.CreateProductAsync(product);
+            var response = new RestResponse
+            {
+                Status = RestStatus.Ok,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    DataType = "json/object",
+                    CacheTime = 0,
+                    Manipulations = ["GET"],
+                    Links =
+                    {
+                        ["parent"] = "/api/products",
+                        ["self"] =
+                            $"/api/products/{createdProduct.Id}"
+                    }
+                },
+                Data = createdProduct
+            };
 
-        return CreatedAtAction(
-            nameof(GetProductById),
-            new { id = createdProduct.Id },
-            createdProduct);
+            return StatusCode(
+                StatusCodes.Status201Created,
+                response);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    Manipulations = ["POST"],
+                    Links = { ["self"] = "/api/products" }
+                },
+                Data = new { message = exception.Message }
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    Manipulations = ["POST"],
+                    Links = { ["self"] = "/api/products" }
+                },
+                Data = new { message = exception.Message }
+            });
+        }
     }
 }
