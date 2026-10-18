@@ -5,9 +5,19 @@ namespace foxtrot_store_backend.Data;
 
 public class DataAccessor(DataContext dataContext)
 {
+    private readonly DataContext _dataContext = dataContext;
+
+    public Guid GetDbIdentity()
+    {
+        return _dataContext.Database
+            .SqlQuery<Guid>($"SELECT NEWID()")
+            .AsEnumerable()
+            .First();
+    }
+
     public async Task<List<Product>> GetProductsAsync()
     {
-        return await dataContext.Products
+        return await _dataContext.Products
             .AsNoTracking()
             .ToListAsync();
     }
@@ -16,7 +26,7 @@ public class DataAccessor(DataContext dataContext)
     {
         dataContext.Products.Add(product);
 
-        await dataContext.SaveChangesAsync();
+        await _dataContext.SaveChangesAsync();
 
         return product;
     }
