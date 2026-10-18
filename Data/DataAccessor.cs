@@ -261,12 +261,133 @@ public class DataAccessor(DataContext dataContext)
             .FirstOrDefaultAsync();
     }
 
-    public async Task<Product> CreateProductAsync(Product product)
+
+    public async Task<ProductDetailsDto> CreateProductAsync(
+        ProductCreateRequest request)
     {
+        var sku = request.Sku.Trim();
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        // Check for duplicate SKU and slug.
+        if (await _dataContext.Products.AnyAsync(
+                product => product.Sku == sku))
+        {
+            throw new InvalidOperationException(
+                "A product with this SKU already exists.");
+        }
+
+        if (await _dataContext.Products.AnyAsync(
+                product => product.Slug == slug))
+        {
+            throw new InvalidOperationException(
+                "A product with this slug already exists.");
+        }
+
+        // Validate the brand.
+        if (request.BrandId.HasValue)
+        {
+            var brandExists = await _dataContext.Brands.AnyAsync(
+                brand => brand.Id == request.BrandId.Value
+                         && brand.IsActive);
+
+            if (!brandExists)
+            {
+                throw new ArgumentException(
+                    "The specified brand does not exist or is inactive.");
+            }
+        }
+
+        // Validate categories.
+        var categoryIds = request.CategoryIds.Distinct().ToList();
+
+        if (categoryIds.Count != request.CategoryIds.Count)
+        {
+            throw new ArgumentException(
+                "Duplicate category IDs are not allowed.");
+        }
+
+        if (categoryIds.Count > 0)
+        {
+            var activeCategoryCount =
+                await _dataContext.Categories.CountAsync(
+                    category => categoryIds.Contains(category.Id)
+                                && category.IsActive);
+
+            if (activeCategoryCount != categoryIds.Count)
+            {
+                throw new ArgumentException(
+                    "One or more categories do not exist or are inactive.");
+            }
+        }
+
+        // Allow at most one primary image.
+        if (request.Images.Count(image => image.IsPrimary) > 1)
+        {
+            throw new ArgumentException(
+                "Only one primary image is allowed.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Sku = sku,
+            Name = request.Name.Trim(),
+            Slug = slug,
+            Description = request.Description.Trim(),
+            Price = request.Price,
+            StockQuantity = request.StockQuantity,
+            BrandId = request.BrandId,
+            IsActive = true,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
         _dataContext.Products.Add(product);
 
+        foreach (var categoryId in categoryIds)
+        {
+            _dataContext.ProductCategories.Add(new ProductCategory
+            {
+                ProductId = product.Id,
+                CategoryId = categoryId
+            });
+        }
+
+        foreach (var image in request.Images)
+        {
+            _dataContext.ProductImages.Add(new ProductImage
+            {
+                Id = Guid.NewGuid(),
+                ProductId = product.Id,
+                ImageUrl = image.ImageUrl.Trim(),
+                IsPrimary = image.IsPrimary,
+                SortOrder = image.SortOrder
+            });
+        }
+
+        foreach (var specification in request.Specifications)
+        {
+            _dataContext.ProductSpecifications.Add(
+                new ProductSpecification
+                {
+                    Id = Guid.NewGuid(),
+                    ProductId = product.Id,
+                    Name = specification.Name.Trim(),
+                    Value = specification.Value.Trim(),
+                    SortOrder = specification.SortOrder
+                });
+        }
+
+        // EF Core uses a transaction for this relational SaveChanges operation.
         await _dataContext.SaveChangesAsync();
 
-        return product;
+        var createdProduct = await GetProductByIdAsync(product.Id);
+
+        return createdProduct
+            ?? throw new InvalidOperationException(
+                "The product was created but could not be retrieved.");
     }
+
 }
