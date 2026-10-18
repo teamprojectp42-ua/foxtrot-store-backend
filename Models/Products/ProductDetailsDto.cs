@@ -25,21 +25,3 @@ public class ProductDetailsDto
 
     public List<ProductSpecificationDto> Specifications { get; set; } = [];
 }
-
-public class ProductImageDto
-{
-    public string ImageUrl { get; set; } = string.Empty;
-
-    public bool IsPrimary { get; set; }
-
-    public int SortOrder { get; set; }
-}
-
-public class ProductSpecificationDto
-{
-    public string Name { get; set; } = string.Empty;
-
-    public string Value { get; set; } = string.Empty;
-
-    public int SortOrder { get; set; }
-}
