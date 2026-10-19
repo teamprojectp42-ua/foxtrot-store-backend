@@ -462,6 +462,7 @@ public class DataAccessor(DataContext dataContext)
                 Name = category.Name,
                 Slug = category.Slug,
                 Description = category.Description,
+                ImageUrl = category.ImageUrl,
                 ParentCategoryId = category.ParentCategoryId,
                 SortOrder = category.SortOrder
             })
@@ -479,6 +480,7 @@ public class DataAccessor(DataContext dataContext)
                 Name = category.Name,
                 Slug = category.Slug,
                 Description = category.Description,
+                ImageUrl = category.ImageUrl,
                 ParentCategoryId = category.ParentCategoryId,
                 SortOrder = category.SortOrder
             })
@@ -496,6 +498,7 @@ public class DataAccessor(DataContext dataContext)
                 Name = category.Name,
                 Slug = category.Slug,
                 Description = category.Description,
+                ImageUrl = category.ImageUrl,
                 ParentCategoryId = category.ParentCategoryId,
                 SortOrder = category.SortOrder
             })
