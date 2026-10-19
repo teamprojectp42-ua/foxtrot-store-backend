@@ -195,4 +195,4 @@ public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
             Data = result.Items
         });
     }
-}
+} 
