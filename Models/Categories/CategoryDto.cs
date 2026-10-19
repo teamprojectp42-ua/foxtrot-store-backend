@@ -1,5 +1,4 @@
-﻿
-namespace foxtrot_store_backend.Models.Categories;
+﻿namespace foxtrot_store_backend.Models.Categories;
 
 public class CategoryDto
 {
