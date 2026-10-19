@@ -1,5 +1,6 @@
 ﻿
 using foxtrot_store_backend.Data;
+using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
@@ -195,4 +196,123 @@ public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
             Data = result.Items
         });
     }
-} 
+
+
+    [HttpPost]
+    public async Task<IActionResult> CreateCategory(
+        [FromBody] CategoryCreateRequest request)
+    {
+        try
+        {
+            var category =
+                await _dataAccessor.CreateCategoryAsync(request);
+
+            return StatusCode(StatusCodes.Status201Created,
+                new RestResponse
+                {
+                    Status = RestStatus.Created,
+                    Meta = new RestMeta
+                    {
+                        ApiName = "Category",
+                        DataType = "json/object",
+                        Manipulations = ["GET"],
+                        Links =
+                        {
+                            ["parent"] = "/api/categories",
+                            ["self"] = $"/api/categories/{category.Id}"
+                        }
+                    },
+                    Data = category
+                });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta { ApiName = "Category" },
+                Data = new { message = ex.Message }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta { ApiName = "Category" },
+                Data = new { message = ex.Message }
+            });
+        }
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> UpdateCategory(
+        Guid id,
+        [FromBody] CategoryUpdateRequest request)
+    {
+        try
+        {
+            var category =
+                await _dataAccessor.UpdateCategoryAsync(id, request);
+
+            if (category is null)
+            {
+                return NotFound(new RestResponse
+                {
+                    Status = RestStatus.NotFound,
+                    Meta = new RestMeta { ApiName = "Category" },
+                    Data = new { message = "Category not found." }
+                });
+            }
+
+            return Ok(new RestResponse
+            {
+                Status = RestStatus.Ok,
+                Meta = new RestMeta { ApiName = "Category" },
+                Data = category
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta { ApiName = "Category" },
+                Data = new { message = ex.Message }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta { ApiName = "Category" },
+                Data = new { message = ex.Message }
+            });
+        }
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteCategory(Guid id)
+    {
+        var deleted = await _dataAccessor.DeleteCategoryAsync(id);
+
+        if (!deleted)
+        {
+            return NotFound(new RestResponse
+            {
+                Status = RestStatus.NotFound,
+                Meta = new RestMeta { ApiName = "Category" },
+                Data = new { message = "Category not found." }
+            });
+        }
+
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Meta = new RestMeta { ApiName = "Category" },
+            Data = new { message = "Category deleted successfully." }
+        });
+    }
+
+}
