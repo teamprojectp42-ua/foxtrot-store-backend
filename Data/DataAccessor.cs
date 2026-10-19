@@ -565,4 +565,251 @@ public class DataAccessor(DataContext dataContext)
         }
     }
 
+
+    // Brands
+
+    public async Task<BrandDto> CreateBrandAsync(
+        BrandCreateRequest request)
+    {
+        var name = request.Name.Trim();
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Brands.AnyAsync(b => b.Slug == slug))
+        {
+            throw new InvalidOperationException(
+                "A brand with this slug already exists.");
+        }
+
+        var brand = new Brand
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Slug = slug,
+            Description = request.Description?.Trim(),
+            LogoUrl = request.LogoUrl?.Trim(),
+            IsActive = true
+        };
+
+        _dataContext.Brands.Add(brand);
+        await _dataContext.SaveChangesAsync();
+
+        return new BrandDto
+        {
+            Id = brand.Id,
+            Name = brand.Name,
+            Slug = brand.Slug,
+            Description = brand.Description,
+            LogoUrl = brand.LogoUrl
+        };
+    }
+
+    public async Task<BrandDto?> UpdateBrandAsync(
+        Guid id,
+        BrandUpdateRequest request)
+    {
+        var brand = await _dataContext.Brands
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (brand is null)
+        {
+            return null;
+        }
+
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Brands.AnyAsync(
+            b => b.Slug == slug && b.Id != id))
+        {
+            throw new InvalidOperationException(
+                "A brand with this slug already exists.");
+        }
+
+        brand.Name = request.Name.Trim();
+        brand.Slug = slug;
+        brand.Description = request.Description?.Trim();
+        brand.LogoUrl = request.LogoUrl?.Trim();
+        brand.IsActive = request.IsActive;
+
+        await _dataContext.SaveChangesAsync();
+
+        return new BrandDto
+        {
+            Id = brand.Id,
+            Name = brand.Name,
+            Slug = brand.Slug,
+            Description = brand.Description,
+            LogoUrl = brand.LogoUrl
+        };
+    }
+
+    public async Task<bool> DeleteBrandAsync(Guid id)
+    {
+        var brand = await _dataContext.Brands
+            .FirstOrDefaultAsync(b => b.Id == id);
+
+        if (brand is null)
+        {
+            return false;
+        }
+
+        _dataContext.Brands.Remove(brand);
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+
+    // Categories
+
+    public async Task<CategoryDto> CreateCategoryAsync(
+        CategoryCreateRequest request)
+    {
+        var id = Guid.NewGuid();
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Categories.AnyAsync(
+            c => c.Slug == slug))
+        {
+            throw new InvalidOperationException(
+                "A category with this slug already exists.");
+        }
+
+        await EnsureValidParentCategoryAsync(
+            id,
+            request.ParentCategoryId);
+
+        var category = new Category
+        {
+            Id = id,
+            Name = request.Name.Trim(),
+            Slug = slug,
+            Description = request.Description?.Trim(),
+            ParentCategoryId = request.ParentCategoryId,
+            SortOrder = request.SortOrder,
+            IsActive = true
+        };
+
+        _dataContext.Categories.Add(category);
+        await _dataContext.SaveChangesAsync();
+
+        return new CategoryDto
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Slug = category.Slug,
+            Description = category.Description,
+            ParentCategoryId = category.ParentCategoryId,
+            SortOrder = category.SortOrder
+        };
+    }
+
+    public async Task<CategoryDto?> UpdateCategoryAsync(
+        Guid id,
+        CategoryUpdateRequest request)
+    {
+        var category = await _dataContext.Categories
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (category is null)
+        {
+            return null;
+        }
+
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Categories.AnyAsync(
+            c => c.Slug == slug && c.Id != id))
+        {
+            throw new InvalidOperationException(
+                "A category with this slug already exists.");
+        }
+
+        await EnsureValidParentCategoryAsync(
+            id,
+            request.ParentCategoryId);
+
+        category.Name = request.Name.Trim();
+        category.Slug = slug;
+        category.Description = request.Description?.Trim();
+        category.ParentCategoryId = request.ParentCategoryId;
+        category.SortOrder = request.SortOrder;
+        category.IsActive = request.IsActive;
+
+        await _dataContext.SaveChangesAsync();
+
+        return new CategoryDto
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Slug = category.Slug,
+            Description = category.Description,
+            ParentCategoryId = category.ParentCategoryId,
+            SortOrder = category.SortOrder
+        };
+    }
+
+    public async Task<bool> DeleteCategoryAsync(Guid id)
+    {
+        var category = await _dataContext.Categories
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (category is null)
+        {
+            return false;
+        }
+
+        _dataContext.Categories.Remove(category);
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+
+    private async Task EnsureValidParentCategoryAsync(
+        Guid categoryId,
+        Guid? parentCategoryId)
+    {
+        if (!parentCategoryId.HasValue)
+        {
+            return;
+        }
+
+        var parents = await _dataContext.Categories
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .Select(c => new
+            {
+                c.Id,
+                c.ParentCategoryId
+            })
+            .ToDictionaryAsync(c => c.Id, c => c.ParentCategoryId);
+
+        if (!parents.ContainsKey(parentCategoryId.Value))
+        {
+            throw new ArgumentException(
+                "The parent category does not exist or is inactive.");
+        }
+
+        var visited = new HashSet<Guid>();
+        Guid? currentId = parentCategoryId;
+
+        while (currentId.HasValue)
+        {
+            if (currentId.Value == categoryId)
+            {
+                throw new ArgumentException(
+                    "A category cannot be its own ancestor.");
+            }
+
+            if (!visited.Add(currentId.Value))
+            {
+                throw new ArgumentException(
+                    "The category hierarchy contains a cycle.");
+            }
+
+            if (!parents.TryGetValue(currentId.Value, out currentId))
+            {
+                break;
+            }
+        }
+    }
+
 }
