@@ -23,4 +23,4 @@ public class CategoryUpdateRequest
     public int SortOrder { get; set; }
 
     public bool IsActive { get; set; } = true;
-}
+}    
