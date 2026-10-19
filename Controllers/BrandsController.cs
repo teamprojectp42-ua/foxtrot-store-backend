@@ -175,4 +175,4 @@ public class BrandsController(DataAccessor dataAccessor) : ControllerBase
             Data = result.Items
         });
     }
-}
+} 
