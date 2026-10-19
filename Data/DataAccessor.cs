@@ -520,7 +520,8 @@ public class DataAccessor(DataContext dataContext)
                 Id = category.Id,
                 Name = category.Name,
                 Slug = category.Slug,
-                SortOrder = category.SortOrder
+                SortOrder = category.SortOrder,
+                ImageUrl = category.ImageUrl,
             });
 
         var roots = new List<CategoryTreeDto>();
