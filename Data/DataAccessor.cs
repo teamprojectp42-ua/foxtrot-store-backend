@@ -1,5 +1,7 @@
 ﻿
 using foxtrot_store_backend.Data.Entities;
+using foxtrot_store_backend.Models.Brands;
+using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
 using Microsoft.EntityFrameworkCore;
 
@@ -388,6 +390,179 @@ public class DataAccessor(DataContext dataContext)
         return createdProduct
             ?? throw new InvalidOperationException(
                 "The product was created but could not be retrieved.");
+    }
+
+
+    public async Task<List<BrandDto>> GetBrandsAsync()
+    {
+        return await _dataContext.Brands
+            .AsNoTracking()
+            .Where(brand => brand.IsActive)
+            .OrderBy(brand => brand.Name)
+            .Select(brand => new BrandDto
+            {
+                Id = brand.Id,
+                Name = brand.Name,
+                Slug = brand.Slug,
+                Description = brand.Description,
+                LogoUrl = brand.LogoUrl
+            })
+            .ToListAsync();
+    }
+
+    public async Task<BrandDto?> GetBrandByIdAsync(Guid id)
+    {
+        return await _dataContext.Brands
+            .AsNoTracking()
+            .Where(brand => brand.Id == id && brand.IsActive)
+            .Select(brand => new BrandDto
+            {
+                Id = brand.Id,
+                Name = brand.Name,
+                Slug = brand.Slug,
+                Description = brand.Description,
+                LogoUrl = brand.LogoUrl
+            })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<BrandDto?> GetBrandBySlugAsync(string slug)
+    {
+        return await _dataContext.Brands
+            .AsNoTracking()
+            .Where(brand => brand.Slug == slug && brand.IsActive)
+            .Select(brand => new BrandDto
+            {
+                Id = brand.Id,
+                Name = brand.Name,
+                Slug = brand.Slug,
+                Description = brand.Description,
+                LogoUrl = brand.LogoUrl
+            })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<bool> BrandExistsAsync(Guid id)
+    {
+        return await _dataContext.Brands
+            .AsNoTracking()
+            .AnyAsync(brand => brand.Id == id && brand.IsActive);
+    }
+
+    public async Task<List<CategoryDto>> GetCategoriesAsync()
+    {
+        return await _dataContext.Categories
+            .AsNoTracking()
+            .Where(category => category.IsActive)
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(category => category.Name)
+            .Select(category => new CategoryDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
+                ParentCategoryId = category.ParentCategoryId,
+                SortOrder = category.SortOrder
+            })
+            .ToListAsync();
+    }
+
+    public async Task<CategoryDto?> GetCategoryByIdAsync(Guid id)
+    {
+        return await _dataContext.Categories
+            .AsNoTracking()
+            .Where(category => category.Id == id && category.IsActive)
+            .Select(category => new CategoryDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
+                ParentCategoryId = category.ParentCategoryId,
+                SortOrder = category.SortOrder
+            })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
+    {
+        return await _dataContext.Categories
+            .AsNoTracking()
+            .Where(category => category.Slug == slug && category.IsActive)
+            .Select(category => new CategoryDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
+                ParentCategoryId = category.ParentCategoryId,
+                SortOrder = category.SortOrder
+            })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<bool> CategoryExistsAsync(Guid id)
+    {
+        return await _dataContext.Categories
+            .AsNoTracking()
+            .AnyAsync(category => category.Id == id && category.IsActive);
+    }
+
+    public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
+    {
+        var categories = await GetCategoriesAsync();
+
+        var nodes = categories.ToDictionary(
+            category => category.Id,
+            category => new CategoryTreeDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                SortOrder = category.SortOrder
+            });
+
+        var roots = new List<CategoryTreeDto>();
+
+        foreach (var category in categories)
+        {
+            var node = nodes[category.Id];
+
+            if (category.ParentCategoryId.HasValue &&
+                nodes.TryGetValue(category.ParentCategoryId.Value, out var parent))
+            {
+                parent.Children.Add(node);
+            }
+            else
+            {
+                roots.Add(node);
+            }
+        }
+
+        SortCategoryTree(roots);
+
+        return roots;
+    }
+
+    private static void SortCategoryTree(List<CategoryTreeDto> categories)
+    {
+        categories.Sort((first, second) =>
+        {
+            var orderComparison = first.SortOrder.CompareTo(second.SortOrder);
+
+            return orderComparison != 0
+                ? orderComparison
+                : string.Compare(
+                    first.Name,
+                    second.Name,
+                    StringComparison.OrdinalIgnoreCase);
+        });
+
+        foreach (var category in categories)
+        {
+            SortCategoryTree(category.Children);
+        }
     }
 
 }
