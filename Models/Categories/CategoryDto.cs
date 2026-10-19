@@ -10,6 +10,8 @@ public class CategoryDto
 
     public string? Description { get; set; }
 
+    public string? ImageUrl { get; set; }
+
     public Guid? ParentCategoryId { get; set; }
 
     public int SortOrder { get; set; }

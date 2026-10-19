@@ -17,6 +17,8 @@ public class CategoryUpdateRequest
     [StringLength(1000)]
     public string? Description { get; set; }
 
+    public string? ImageUrl { get; set; }
+
     public Guid? ParentCategoryId { get; set; }
 
     [Range(0, int.MaxValue)]

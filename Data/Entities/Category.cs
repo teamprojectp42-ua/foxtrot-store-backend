@@ -17,6 +17,8 @@ public class Category
 
     public int SortOrder { get; set; }
 
+    public string? ImageUrl { get; set; }
+
     public Category? ParentCategory { get; set; }
 
 

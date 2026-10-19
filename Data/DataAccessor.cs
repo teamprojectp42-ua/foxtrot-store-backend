@@ -658,6 +658,7 @@ public class DataAccessor(DataContext dataContext)
         return true;
     }
 
+
     // Categories
 
     public async Task<CategoryDto> CreateCategoryAsync(
@@ -683,6 +684,7 @@ public class DataAccessor(DataContext dataContext)
             Name = request.Name.Trim(),
             Slug = slug,
             Description = request.Description?.Trim(),
+            ImageUrl = request.ImageUrl?.Trim(),
             ParentCategoryId = request.ParentCategoryId,
             SortOrder = request.SortOrder,
             IsActive = true
@@ -697,6 +699,7 @@ public class DataAccessor(DataContext dataContext)
             Name = category.Name,
             Slug = category.Slug,
             Description = category.Description,
+            ImageUrl = category.ImageUrl,
             ParentCategoryId = category.ParentCategoryId,
             SortOrder = category.SortOrder
         };
@@ -730,6 +733,7 @@ public class DataAccessor(DataContext dataContext)
         category.Name = request.Name.Trim();
         category.Slug = slug;
         category.Description = request.Description?.Trim();
+        category.ImageUrl = request.ImageUrl?.Trim();
         category.ParentCategoryId = request.ParentCategoryId;
         category.SortOrder = request.SortOrder;
         category.IsActive = request.IsActive;
@@ -742,6 +746,7 @@ public class DataAccessor(DataContext dataContext)
             Name = category.Name,
             Slug = category.Slug,
             Description = category.Description,
+            ImageUrl = category.ImageUrl,
             ParentCategoryId = category.ParentCategoryId,
             SortOrder = category.SortOrder
         };
@@ -762,6 +767,7 @@ public class DataAccessor(DataContext dataContext)
 
         return true;
     }
+
 
     private async Task EnsureValidParentCategoryAsync(
         Guid categoryId,

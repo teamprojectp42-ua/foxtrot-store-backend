@@ -66,6 +66,10 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
             entity.Property(category => category.Description)
                 .HasMaxLength(1000);
 
+            // Изображение категории
+            entity.Property(category => category.ImageUrl)
+                .HasMaxLength(2048);
+
             entity.HasIndex(category => category.Slug)
                 .IsUnique();
 

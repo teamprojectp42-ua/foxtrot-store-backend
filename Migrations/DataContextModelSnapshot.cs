@@ -51,7 +51,7 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Brands", (string)null);
+                    b.ToTable("Brands");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
@@ -63,6 +63,10 @@ namespace foxtrot_store_backend.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("varchar(1000)");
+
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("varchar(2048)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
@@ -90,7 +94,7 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Categories", (string)null);
+                    b.ToTable("Categories");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Product", b =>
@@ -143,7 +147,7 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("Slug")
                         .IsUnique();
 
-                    b.ToTable("Products", (string)null);
+                    b.ToTable("Products");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductCategory", b =>
@@ -158,7 +162,7 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasIndex("CategoryId");
 
-                    b.ToTable("ProductCategories", (string)null);
+                    b.ToTable("ProductCategories");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductImage", b =>
@@ -185,7 +189,7 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasIndex("ProductId", "SortOrder");
 
-                    b.ToTable("ProductImages", (string)null);
+                    b.ToTable("ProductImages");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecification", b =>
@@ -217,7 +221,7 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasIndex("ProductId", "SortOrder");
 
-                    b.ToTable("ProductSpecifications", (string)null);
+                    b.ToTable("ProductSpecifications");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
