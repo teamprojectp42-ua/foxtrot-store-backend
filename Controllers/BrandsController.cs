@@ -1,5 +1,6 @@
 ﻿
 using foxtrot_store_backend.Data;
+using foxtrot_store_backend.Models.Brands;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
@@ -175,4 +176,102 @@ public class BrandsController(DataAccessor dataAccessor) : ControllerBase
             Data = result.Items
         });
     }
-} 
+
+    [HttpPost]
+    public async Task<IActionResult> CreateBrand(
+        [FromBody] BrandCreateRequest request)
+    {
+        try
+        {
+            var brand = await _dataAccessor.CreateBrandAsync(request);
+
+            return StatusCode(StatusCodes.Status201Created,
+                new RestResponse
+                {
+                    Status = RestStatus.Created,
+                    Meta = new RestMeta
+                    {
+                        ApiName = "Brand",
+                        DataType = "json/object",
+                        Manipulations = ["GET"],
+                        Links =
+                        {
+                            ["parent"] = "/api/brands",
+                            ["self"] = $"/api/brands/{brand.Id}"
+                        }
+                    },
+                    Data = brand
+                });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta { ApiName = "Brand" },
+                Data = new { message = ex.Message }
+            });
+        }
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> UpdateBrand(
+        Guid id,
+        [FromBody] BrandUpdateRequest request)
+    {
+        try
+        {
+            var brand = await _dataAccessor.UpdateBrandAsync(id, request);
+
+            if (brand is null)
+            {
+                return NotFound(new RestResponse
+                {
+                    Status = RestStatus.NotFound,
+                    Meta = new RestMeta { ApiName = "Brand" },
+                    Data = new { message = "Brand not found." }
+                });
+            }
+
+            return Ok(new RestResponse
+            {
+                Status = RestStatus.Ok,
+                Meta = new RestMeta { ApiName = "Brand" },
+                Data = brand
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta { ApiName = "Brand" },
+                Data = new { message = ex.Message }
+            });
+        }
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteBrand(Guid id)
+    {
+        var deleted = await _dataAccessor.DeleteBrandAsync(id);
+
+        if (!deleted)
+        {
+            return NotFound(new RestResponse
+            {
+                Status = RestStatus.NotFound,
+                Meta = new RestMeta { ApiName = "Brand" },
+                Data = new { message = "Brand not found." }
+            });
+        }
+
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Meta = new RestMeta { ApiName = "Brand" },
+            Data = new { message = "Brand deleted successfully." }
+        });
+    }
+
+}
