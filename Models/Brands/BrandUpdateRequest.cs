@@ -18,7 +18,6 @@ public class BrandUpdateRequest
     public string? Description { get; set; }
 
     [StringLength(2048)]
-    [Url]
     public string? LogoUrl { get; set; }
 
     public bool IsActive { get; set; } = true;
