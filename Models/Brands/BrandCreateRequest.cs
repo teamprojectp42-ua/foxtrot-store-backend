@@ -19,5 +19,5 @@ public class BrandCreateRequest
 
     [StringLength(2048)]
     [Url]
-    public string? LogoUrl { get; set; }
+    public string? LogoUrl { get; set; } 
 }
