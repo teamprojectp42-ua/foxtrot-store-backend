@@ -14,7 +14,7 @@ public class DataAccessor(DataContext dataContext)
     public Guid GetDbIdentity()
     {
         return _dataContext.Database
-            .SqlQuery<Guid>($"SELECT NEWID()")
+            .SqlQuery<Guid>($"SELECT UUID() AS Value")
             .AsEnumerable()
             .First();
     }
