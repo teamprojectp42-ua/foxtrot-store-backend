@@ -289,7 +289,6 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
-
     [HttpPost]
     public async Task<IActionResult> CreateCategory(
         [FromBody] CategoryCreateRequest request)

@@ -12,6 +12,7 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductSpecification> ProductSpecifications
         => Set<ProductSpecification>();
+    public DbSet<Promotion> Promotions => Set<Promotion>();
 
     public DbSet<Brand> Brands => Set<Brand>();
 
@@ -140,6 +141,31 @@ public class DataContext(DbContextOptions<DataContext> options) : DbContext(opti
                 specification.ProductId,
                 specification.Name
             }).IsUnique();
+        });
+
+        modelBuilder.Entity<Promotion>(entity =>
+        {
+            entity.HasKey(p => p.Id);
+
+            entity.Property(p => p.Title)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(p => p.Slug)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.HasIndex(p => p.Slug)
+                .IsUnique();
+
+            entity.Property(p => p.Description)
+                .HasMaxLength(2000);
+
+            entity.Property(p => p.BannerImageUrl)
+                .HasMaxLength(2048);
+
+            entity.Property(p => p.ImageUrl)
+                .HasMaxLength(2048);
         });
     }
 }
