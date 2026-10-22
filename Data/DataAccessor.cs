@@ -904,4 +904,172 @@ public class DataAccessor(DataContext dataContext)
             .FirstOrDefaultAsync();
     }
 
+    public async Task<List<PromotionAdminDto>> GetPromotionsForAdminAsync()
+    {
+        return await _dataContext.Promotions
+            .AsNoTracking()
+            .OrderBy(p => p.SortOrder)
+            .ThenBy(p => p.Title)
+            .Select(p => new PromotionAdminDto
+            {
+                Id = p.Id,
+                Title = p.Title,
+                Slug = p.Slug,
+                Description = p.Description,
+                BannerImageUrl = p.BannerImageUrl,
+                ImageUrl = p.ImageUrl,
+                StartDate = p.StartDate,
+                EndDate = p.EndDate,
+                IsActive = p.IsActive,
+                SortOrder = p.SortOrder,
+                CreatedAt = p.CreatedAt,
+                UpdatedAt = p.UpdatedAt
+            })
+            .ToListAsync();
+    }
+
+    public async Task<PromotionAdminDto?> GetPromotionForAdminByIdAsync(
+        Guid id)
+    {
+        return await _dataContext.Promotions
+            .AsNoTracking()
+            .Where(p => p.Id == id)
+            .Select(p => new PromotionAdminDto
+            {
+                Id = p.Id,
+                Title = p.Title,
+                Slug = p.Slug,
+                Description = p.Description,
+                BannerImageUrl = p.BannerImageUrl,
+                ImageUrl = p.ImageUrl,
+                StartDate = p.StartDate,
+                EndDate = p.EndDate,
+                IsActive = p.IsActive,
+                SortOrder = p.SortOrder,
+                CreatedAt = p.CreatedAt,
+                UpdatedAt = p.UpdatedAt
+            })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<bool> PromotionSlugExistsAsync(
+        string slug,
+        Guid? excludeId = null)
+    {
+        var normalizedSlug = slug.Trim().ToLowerInvariant();
+
+        var query = _dataContext.Promotions
+            .AsNoTracking()
+            .Where(p => p.Slug == normalizedSlug);
+
+        if (excludeId.HasValue)
+        {
+            query = query.Where(p => p.Id != excludeId.Value);
+        }
+
+        return await query.AnyAsync();
+    }
+
+    public async Task<PromotionAdminDto> CreatePromotionAsync(
+        PromotionCreateRequest request)
+    {
+        ValidatePromotionDates(request.StartDate, request.EndDate);
+
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await PromotionSlugExistsAsync(slug))
+        {
+            throw new InvalidOperationException(
+                "A promotion with this slug already exists.");
+        }
+
+        var promotion = new foxtrot_store_backend.Data.Entities.Promotion
+        {
+            Title = request.Title.Trim(),
+            Slug = slug,
+            Description = request.Description?.Trim(),
+            BannerImageUrl = request.BannerImageUrl?.Trim(),
+            ImageUrl = request.ImageUrl?.Trim(),
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
+            IsActive = request.IsActive,
+            SortOrder = request.SortOrder,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _dataContext.Promotions.Add(promotion);
+        await _dataContext.SaveChangesAsync();
+
+        return (await GetPromotionForAdminByIdAsync(promotion.Id))!;
+    }
+
+    public async Task<PromotionAdminDto?> UpdatePromotionAsync(
+        Guid id,
+        PromotionUpdateRequest request)
+    {
+        ValidatePromotionDates(request.StartDate, request.EndDate);
+
+        var promotion = await _dataContext.Promotions
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (promotion is null)
+        {
+            return null;
+        }
+
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await PromotionSlugExistsAsync(slug, id))
+        {
+            throw new InvalidOperationException(
+                "A promotion with this slug already exists.");
+        }
+
+        promotion.Title = request.Title.Trim();
+        promotion.Slug = slug;
+        promotion.Description = request.Description?.Trim();
+        promotion.BannerImageUrl = request.BannerImageUrl?.Trim();
+        promotion.ImageUrl = request.ImageUrl?.Trim();
+        promotion.StartDate = request.StartDate;
+        promotion.EndDate = request.EndDate;
+        promotion.IsActive = request.IsActive;
+        promotion.SortOrder = request.SortOrder;
+        promotion.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync();
+
+        return await GetPromotionForAdminByIdAsync(id);
+    }
+
+    public async Task<bool> DeletePromotionAsync(Guid id)
+    {
+        var promotion = await _dataContext.Promotions
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (promotion is null)
+        {
+            return false;
+        }
+
+        promotion.IsActive = false;
+        promotion.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+
+    private static void ValidatePromotionDates(
+        DateTime? startDate,
+        DateTime? endDate)
+    {
+        if (startDate.HasValue &&
+            endDate.HasValue &&
+            endDate.Value < startDate.Value)
+        {
+            throw new ArgumentException(
+                "EndDate cannot be earlier than StartDate.");
+        }
+    }
+
 }
