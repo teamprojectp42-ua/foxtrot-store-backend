@@ -1,8 +1,8 @@
-﻿
-using foxtrot_store_backend.Data.Entities;
+﻿using foxtrot_store_backend.Data.Entities;
 using foxtrot_store_backend.Models.Brands;
 using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
+using foxtrot_store_backend.Models.Promotions;
 using Microsoft.EntityFrameworkCore;
 
 namespace foxtrot_store_backend.Data;
@@ -571,7 +571,6 @@ public class DataAccessor(DataContext dataContext)
 
 
     // Brands
-
     public async Task<BrandDto> CreateBrandAsync(
         BrandCreateRequest request)
     {
@@ -664,7 +663,6 @@ public class DataAccessor(DataContext dataContext)
 
 
     // Categories
-
     public async Task<CategoryDto> CreateCategoryAsync(
         CategoryCreateRequest request)
     {
@@ -820,6 +818,90 @@ public class DataAccessor(DataContext dataContext)
                 break;
             }
         }
+    }
+
+
+    // Promotions
+    public async Task<List<PromotionDto>> GetPromotionsAsync()
+    {
+        var now = DateTime.UtcNow;
+
+        return await _dataContext.Promotions
+            .AsNoTracking()
+            .Where(promotion =>
+                promotion.IsActive &&
+                (!promotion.StartDate.HasValue ||
+                 promotion.StartDate.Value <= now) &&
+                (!promotion.EndDate.HasValue ||
+                 promotion.EndDate.Value >= now))
+            .OrderBy(promotion => promotion.SortOrder)
+            .ThenBy(promotion => promotion.Title)
+            .Select(promotion => new PromotionDto
+            {
+                Id = promotion.Id,
+                Title = promotion.Title,
+                Slug = promotion.Slug,
+                BannerImageUrl = promotion.BannerImageUrl,
+                SortOrder = promotion.SortOrder
+            })
+            .ToListAsync();
+    }
+
+    public async Task<PromotionDetailsDto?> GetPromotionByIdAsync(
+        Guid id)
+    {
+        var now = DateTime.UtcNow;
+
+        return await _dataContext.Promotions
+            .AsNoTracking()
+            .Where(promotion =>
+                promotion.Id == id &&
+                promotion.IsActive &&
+                (!promotion.StartDate.HasValue ||
+                 promotion.StartDate.Value <= now) &&
+                (!promotion.EndDate.HasValue ||
+                 promotion.EndDate.Value >= now))
+            .Select(promotion => new PromotionDetailsDto
+            {
+                Id = promotion.Id,
+                Title = promotion.Title,
+                Slug = promotion.Slug,
+                Description = promotion.Description,
+                BannerImageUrl = promotion.BannerImageUrl,
+                ImageUrl = promotion.ImageUrl,
+                StartDate = promotion.StartDate,
+                EndDate = promotion.EndDate
+            })
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<PromotionDetailsDto?> GetPromotionBySlugAsync(
+        string slug)
+    {
+        var now = DateTime.UtcNow;
+        var normalizedSlug = slug.Trim().ToLowerInvariant();
+
+        return await _dataContext.Promotions
+            .AsNoTracking()
+            .Where(promotion =>
+                promotion.Slug == normalizedSlug &&
+                promotion.IsActive &&
+                (!promotion.StartDate.HasValue ||
+                 promotion.StartDate.Value <= now) &&
+                (!promotion.EndDate.HasValue ||
+                 promotion.EndDate.Value >= now))
+            .Select(promotion => new PromotionDetailsDto
+            {
+                Id = promotion.Id,
+                Title = promotion.Title,
+                Slug = promotion.Slug,
+                Description = promotion.Description,
+                BannerImageUrl = promotion.BannerImageUrl,
+                ImageUrl = promotion.ImageUrl,
+                StartDate = promotion.StartDate,
+                EndDate = promotion.EndDate
+            })
+            .FirstOrDefaultAsync();
     }
 
 }
