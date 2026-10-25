@@ -1,4 +1,4 @@
-﻿
+﻿using Microsoft.AspNetCore.Authorization;
 using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Models.Brands;
 using foxtrot_store_backend.Models.Products;
@@ -177,6 +177,7 @@ public class BrandsController(DataAccessor dataAccessor) : ControllerBase
         });
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateBrand(
         [FromBody] BrandCreateRequest request)
@@ -214,6 +215,7 @@ public class BrandsController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdateBrand(
         Guid id,
@@ -251,6 +253,7 @@ public class BrandsController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteBrand(Guid id)
     {

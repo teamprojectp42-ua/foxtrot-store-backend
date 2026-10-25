@@ -2,6 +2,7 @@
 using foxtrot_store_backend.Models.Promotions;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -60,6 +61,7 @@ public class PromotionsController(DataAccessor dataAccessor) : ControllerBase
 
     // Admin endpoints
 
+    [Authorize(Roles = "Admin")]
     [HttpGet("admin")]
     public async Task<IActionResult> GetPromotionsForAdmin()
     {
@@ -68,6 +70,7 @@ public class PromotionsController(DataAccessor dataAccessor) : ControllerBase
         return Ok(CreateResponse(RestStatus.Ok, promotions));
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpGet("admin/{id:guid}")]
     public async Task<IActionResult> GetPromotionForAdminById(Guid id)
     {
@@ -84,6 +87,7 @@ public class PromotionsController(DataAccessor dataAccessor) : ControllerBase
         return Ok(CreateResponse(RestStatus.Ok, promotion));
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreatePromotion(
         [FromBody] PromotionCreateRequest request)
@@ -112,6 +116,7 @@ public class PromotionsController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdatePromotion(
         Guid id,
@@ -145,6 +150,7 @@ public class PromotionsController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeletePromotion(Guid id)
     {

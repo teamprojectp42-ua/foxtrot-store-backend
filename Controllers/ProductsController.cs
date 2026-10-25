@@ -1,8 +1,8 @@
 ﻿
 using foxtrot_store_backend.Data;
-using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace foxtrot_store_backend.Controllers;
@@ -227,6 +227,7 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
         });
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateProduct(
         [FromBody] ProductCreateRequest request)
@@ -289,121 +290,80 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
-    [HttpPost]
-    public async Task<IActionResult> CreateCategory(
-        [FromBody] CategoryCreateRequest request)
-    {
-        try
-        {
-            var category =
-                await _dataAccessor.CreateCategoryAsync(request);
-
-            return StatusCode(StatusCodes.Status201Created,
-                new RestResponse
-                {
-                    Status = RestStatus.Created,
-                    Meta = new RestMeta
-                    {
-                        ApiName = "Category",
-                        DataType = "json/object",
-                        Manipulations = ["GET"],
-                        Links =
-                        {
-                            ["parent"] = "/api/categories",
-                            ["self"] = $"/api/categories/{category.Id}"
-                        }
-                    },
-                    Data = category
-                });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Conflict(new RestResponse
-            {
-                Status = RestStatus.Conflict,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = new { message = ex.Message }
-            });
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new RestResponse
-            {
-                Status = RestStatus.BadRequest,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = new { message = ex.Message }
-            });
-        }
-    }
-
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> UpdateCategory(
+    public async Task<IActionResult> UpdateProduct(
         Guid id,
-        [FromBody] CategoryUpdateRequest request)
+        [FromBody] ProductUpdateRequest request)
     {
         try
         {
-            var category =
-                await _dataAccessor.UpdateCategoryAsync(id, request);
+            var product = await _dataAccessor.UpdateProductAsync(id, request);
 
-            if (category is null)
+            if (product is null)
             {
                 return NotFound(new RestResponse
                 {
                     Status = RestStatus.NotFound,
-                    Meta = new RestMeta { ApiName = "Category" },
-                    Data = new { message = "Category not found." }
+                    Meta = new RestMeta { ApiName = "Product" },
+                    Data = new { message = "Product not found." }
                 });
             }
 
             return Ok(new RestResponse
             {
                 Status = RestStatus.Ok,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = category
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    DataType = "json/object",
+                    Manipulations = ["GET", "PUT", "DELETE"],
+                    Links = { ["self"] = $"/api/products/{id}" }
+                },
+                Data = product
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException exception)
         {
             return Conflict(new RestResponse
             {
                 Status = RestStatus.Conflict,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = new { message = ex.Message }
+                Meta = new RestMeta { ApiName = "Product" },
+                Data = new { message = exception.Message }
             });
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException exception)
         {
             return BadRequest(new RestResponse
             {
                 Status = RestStatus.BadRequest,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = new { message = ex.Message }
+                Meta = new RestMeta { ApiName = "Product" },
+                Data = new { message = exception.Message }
             });
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> DeleteCategory(Guid id)
+    public async Task<IActionResult> DeleteProduct(Guid id)
     {
-        var deleted = await _dataAccessor.DeleteCategoryAsync(id);
+        var deleted = await _dataAccessor.DeleteProductAsync(id);
 
         if (!deleted)
         {
             return NotFound(new RestResponse
             {
                 Status = RestStatus.NotFound,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = new { message = "Category not found." }
+                Meta = new RestMeta { ApiName = "Product" },
+                Data = new { message = "Product not found." }
             });
         }
 
         return Ok(new RestResponse
         {
             Status = RestStatus.Ok,
-            Meta = new RestMeta { ApiName = "Category" },
-            Data = new { message = "Category deleted successfully." }
+            Meta = new RestMeta { ApiName = "Product" },
+            Data = new { message = "Product deactivated successfully." }
         });
     }
-
 }

@@ -1,9 +1,9 @@
-﻿
-using foxtrot_store_backend.Data;
+﻿using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -198,6 +198,7 @@ public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
     }
 
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateCategory(
         [FromBody] CategoryCreateRequest request)
@@ -245,6 +246,7 @@ public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdateCategory(
         Guid id,
@@ -292,6 +294,7 @@ public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteCategory(Guid id)
     {
