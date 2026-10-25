@@ -4,12 +4,19 @@ using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Promotions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using foxtrot_store_backend.Models.Auth;
 
 namespace foxtrot_store_backend.Data;
 
-public class DataAccessor(DataContext dataContext)
+public class DataAccessor(
+    DataContext dataContext,
+    UserManager<IdentityUser> userManager,
+    RoleManager<IdentityRole> roleManager)
 {
     private readonly DataContext _dataContext = dataContext;
+    private readonly UserManager<IdentityUser> _userManager = userManager;
+    private readonly RoleManager<IdentityRole> _roleManager = roleManager;
 
     public Guid GetDbIdentity()
     {
@@ -1071,5 +1078,254 @@ public class DataAccessor(DataContext dataContext)
                 "EndDate cannot be earlier than StartDate.");
         }
     }
+
+
+    #region User Management
+
+    public async Task<IReadOnlyList<UserDto>> GetUsersAsync()
+    {
+        var users = _userManager.Users
+            .OrderBy(user => user.UserName)
+            .ToList();
+
+        var result = new List<UserDto>();
+
+        foreach (var user in users)
+        {
+            result.Add(await MapUserAsync(user));
+        }
+
+        return result;
+    }
+
+    public async Task<UserDto?> GetUserByIdAsync(string id)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        return user is null ? null : await MapUserAsync(user);
+    }
+
+    public async Task<IdentityUser?> FindUserByEmailAsync(string email)
+    {
+        return await _userManager.FindByEmailAsync(email);
+    }
+
+    public async Task<IdentityUser?> FindUserByIdAsync(string id)
+    {
+        return await _userManager.FindByIdAsync(id);
+    }
+
+    public async Task<(IdentityUser? User, IdentityResult Result)> CreateUserAsync(
+        string userName,
+        string email,
+        string password,
+        IEnumerable<string>? roles = null)
+    {
+        var requestedRoles = NormalizeRoles(roles);
+
+        foreach (var role in requestedRoles)
+        {
+            if (!await _roleManager.RoleExistsAsync(role))
+            {
+                return (null, IdentityResult.Failed(new IdentityError
+                {
+                    Code = "RoleNotFound",
+                    Description = $"Role '{role}' does not exist."
+                }));
+            }
+        }
+
+        var user = new IdentityUser
+        {
+            UserName = userName.Trim(),
+            Email = email.Trim()
+        };
+
+        var createResult = await _userManager.CreateAsync(user, password);
+
+        if (!createResult.Succeeded)
+        {
+            return (null, createResult);
+        }
+
+        if (requestedRoles.Count > 0)
+        {
+            var roleResult = await _userManager.AddToRolesAsync(
+                user,
+                requestedRoles);
+
+            if (!roleResult.Succeeded)
+            {
+                await _userManager.DeleteAsync(user);
+                return (null, roleResult);
+            }
+        }
+
+        return (user, IdentityResult.Success);
+    }
+
+    public async Task<IdentityResult> UpdateUserAsync(
+        string id,
+        string userName,
+        string email,
+        IEnumerable<string>? roles = null)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        if (user is null)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "UserNotFound",
+                Description = "User was not found."
+            });
+        }
+
+        var requestedRoles = NormalizeRoles(roles);
+
+        foreach (var role in requestedRoles)
+        {
+            if (!await _roleManager.RoleExistsAsync(role))
+            {
+                return IdentityResult.Failed(new IdentityError
+                {
+                    Code = "RoleNotFound",
+                    Description = $"Role '{role}' does not exist."
+                });
+            }
+        }
+
+        user.UserName = userName.Trim();
+        user.Email = email.Trim();
+
+        var updateResult = await _userManager.UpdateAsync(user);
+
+        if (!updateResult.Succeeded)
+        {
+            return updateResult;
+        }
+
+        var currentRoles = await _userManager.GetRolesAsync(user);
+
+        var rolesToRemove = currentRoles
+            .Except(requestedRoles, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var rolesToAdd = requestedRoles
+            .Except(currentRoles, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (rolesToRemove.Length > 0)
+        {
+            var removeResult = await _userManager.RemoveFromRolesAsync(
+                user,
+                rolesToRemove);
+
+            if (!removeResult.Succeeded)
+            {
+                return removeResult;
+            }
+        }
+
+        if (rolesToAdd.Length > 0)
+        {
+            var addResult = await _userManager.AddToRolesAsync(
+                user,
+                rolesToAdd);
+
+            if (!addResult.Succeeded)
+            {
+                return addResult;
+            }
+        }
+
+        return IdentityResult.Success;
+    }
+
+    public async Task<IdentityResult> UpdateUserProfileAsync(
+        string id,
+        string userName,
+        string email)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        if (user is null)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "UserNotFound",
+                Description = "User was not found."
+            });
+        }
+
+        user.UserName = userName.Trim();
+        user.Email = email.Trim();
+
+        return await _userManager.UpdateAsync(user);
+    }
+
+    public async Task<IdentityResult> ChangeUserPasswordAsync(
+        string id,
+        string currentPassword,
+        string newPassword)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        if (user is null)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "UserNotFound",
+                Description = "User was not found."
+            });
+        }
+
+        return await _userManager.ChangePasswordAsync(
+            user,
+            currentPassword,
+            newPassword);
+    }
+
+    public async Task<IdentityResult> DeleteUserAsync(string id)
+    {
+        var user = await _userManager.FindByIdAsync(id);
+
+        if (user is null)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "UserNotFound",
+                Description = "User was not found."
+            });
+        }
+
+        return await _userManager.DeleteAsync(user);
+    }
+
+    private async Task<UserDto> MapUserAsync(IdentityUser user)
+    {
+        var roles = await _userManager.GetRolesAsync(user);
+
+        return new UserDto
+        {
+            Id = user.Id,
+            UserName = user.UserName ?? string.Empty,
+            Email = user.Email ?? string.Empty,
+            EmailConfirmed = user.EmailConfirmed,
+            IsLockedOut = await _userManager.IsLockedOutAsync(user),
+            Roles = roles.ToList()
+        };
+    }
+
+    private static List<string> NormalizeRoles(IEnumerable<string>? roles)
+    {
+        return (roles ?? [])
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Select(role => role.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    #endregion
 
 }
