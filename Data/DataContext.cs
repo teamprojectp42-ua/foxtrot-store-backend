@@ -1,10 +1,12 @@
-﻿
+﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using foxtrot_store_backend.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace foxtrot_store_backend.Data;
 
-public class DataContext(DbContextOptions<DataContext> options) : DbContext(options)
+public class DataContext(DbContextOptions<DataContext> options)
+    : IdentityDbContext<IdentityUser>(options)
 {
     public DbSet<Product> Products => Set<Product>();
     public DbSet<Category> Categories => Set<Category>();
