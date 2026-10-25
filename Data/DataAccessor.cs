@@ -6,6 +6,7 @@ using foxtrot_store_backend.Models.Promotions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using foxtrot_store_backend.Models.Auth;
+using foxtrot_store_backend.Constants;
 
 namespace foxtrot_store_backend.Data;
 
@@ -158,7 +159,6 @@ public class DataAccessor(
                 totalCount / (double)query.PageSize)
         };
     }
-
     public async Task<ProductDetailsDto?> GetProductByIdAsync(Guid id)
     {
         return await _dataContext.Products
@@ -214,7 +214,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<ProductDetailsDto?> GetProductBySlugAsync(
         string slug)
     {
@@ -271,7 +270,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<ProductDetailsDto> CreateProductAsync(
         ProductCreateRequest request)
     {
@@ -400,7 +398,6 @@ public class DataAccessor(
                 "The product was created but could not be retrieved.");
     }
 
-
     public async Task<List<BrandDto>> GetBrandsAsync()
     {
         return await _dataContext.Brands
@@ -417,7 +414,6 @@ public class DataAccessor(
             })
             .ToListAsync();
     }
-
     public async Task<BrandDto?> GetBrandByIdAsync(Guid id)
     {
         return await _dataContext.Brands
@@ -433,7 +429,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<BrandDto?> GetBrandBySlugAsync(string slug)
     {
         return await _dataContext.Brands
@@ -449,14 +444,12 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<bool> BrandExistsAsync(Guid id)
     {
         return await _dataContext.Brands
             .AsNoTracking()
             .AnyAsync(brand => brand.Id == id && brand.IsActive);
     }
-
     public async Task<List<CategoryDto>> GetCategoriesAsync()
     {
         return await _dataContext.Categories
@@ -476,7 +469,6 @@ public class DataAccessor(
             })
             .ToListAsync();
     }
-
     public async Task<CategoryDto?> GetCategoryByIdAsync(Guid id)
     {
         return await _dataContext.Categories
@@ -494,7 +486,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
     {
         return await _dataContext.Categories
@@ -512,14 +503,12 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<bool> CategoryExistsAsync(Guid id)
     {
         return await _dataContext.Categories
             .AsNoTracking()
             .AnyAsync(category => category.Id == id && category.IsActive);
     }
-
     public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
     {
         var categories = await GetCategoriesAsync();
@@ -556,7 +545,6 @@ public class DataAccessor(
 
         return roots;
     }
-
     private static void SortCategoryTree(List<CategoryTreeDto> categories)
     {
         categories.Sort((first, second) =>
@@ -576,7 +564,6 @@ public class DataAccessor(
             SortCategoryTree(category.Children);
         }
     }
-
 
     public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(Guid id)
     {
@@ -627,7 +614,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<ProductDetailsDto?> UpdateProductAsync(
         Guid id,
         ProductUpdateRequest request)
@@ -764,7 +750,6 @@ public class DataAccessor(
             ?? throw new InvalidOperationException(
                 "The product was updated but could not be retrieved.");
     }
-
     public async Task<bool> DeleteProductAsync(Guid id)
     {
         var product = await _dataContext.Products
@@ -818,7 +803,6 @@ public class DataAccessor(
             LogoUrl = brand.LogoUrl
         };
     }
-
     public async Task<BrandDto?> UpdateBrandAsync(
         Guid id,
         BrandUpdateRequest request)
@@ -857,7 +841,6 @@ public class DataAccessor(
             LogoUrl = brand.LogoUrl
         };
     }
-
     public async Task<bool> DeleteBrandAsync(Guid id)
     {
         var brand = await _dataContext.Brands
@@ -873,7 +856,6 @@ public class DataAccessor(
 
         return true;
     }
-
 
     // Categories
     public async Task<CategoryDto> CreateCategoryAsync(
@@ -919,7 +901,6 @@ public class DataAccessor(
             SortOrder = category.SortOrder
         };
     }
-
     public async Task<CategoryDto?> UpdateCategoryAsync(
         Guid id,
         CategoryUpdateRequest request)
@@ -966,7 +947,6 @@ public class DataAccessor(
             SortOrder = category.SortOrder
         };
     }
-
     public async Task<bool> DeleteCategoryAsync(Guid id)
     {
         var category = await _dataContext.Categories
@@ -982,8 +962,6 @@ public class DataAccessor(
 
         return true;
     }
-
-
     private async Task EnsureValidParentCategoryAsync(
         Guid categoryId,
         Guid? parentCategoryId)
@@ -1059,7 +1037,6 @@ public class DataAccessor(
             })
             .ToListAsync();
     }
-
     public async Task<PromotionDetailsDto?> GetPromotionByIdAsync(
         Guid id)
     {
@@ -1087,7 +1064,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<PromotionDetailsDto?> GetPromotionBySlugAsync(
         string slug)
     {
@@ -1116,7 +1092,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<List<PromotionAdminDto>> GetPromotionsForAdminAsync()
     {
         return await _dataContext.Promotions
@@ -1140,7 +1115,6 @@ public class DataAccessor(
             })
             .ToListAsync();
     }
-
     public async Task<PromotionAdminDto?> GetPromotionForAdminByIdAsync(
         Guid id)
     {
@@ -1164,7 +1138,6 @@ public class DataAccessor(
             })
             .FirstOrDefaultAsync();
     }
-
     public async Task<bool> PromotionSlugExistsAsync(
         string slug,
         Guid? excludeId = null)
@@ -1182,7 +1155,6 @@ public class DataAccessor(
 
         return await query.AnyAsync();
     }
-
     public async Task<PromotionAdminDto> CreatePromotionAsync(
         PromotionCreateRequest request)
     {
@@ -1215,7 +1187,6 @@ public class DataAccessor(
 
         return (await GetPromotionForAdminByIdAsync(promotion.Id))!;
     }
-
     public async Task<PromotionAdminDto?> UpdatePromotionAsync(
         Guid id,
         PromotionUpdateRequest request)
@@ -1253,7 +1224,6 @@ public class DataAccessor(
 
         return await GetPromotionForAdminByIdAsync(id);
     }
-
     public async Task<bool> DeletePromotionAsync(Guid id)
     {
         var promotion = await _dataContext.Promotions
@@ -1271,7 +1241,6 @@ public class DataAccessor(
 
         return true;
     }
-
     private static void ValidatePromotionDates(
         DateTime? startDate,
         DateTime? endDate)
@@ -1303,42 +1272,49 @@ public class DataAccessor(
 
         return result;
     }
-
     public async Task<UserDto?> GetUserByIdAsync(string id)
     {
         var user = await _userManager.FindByIdAsync(id);
 
         return user is null ? null : await MapUserAsync(user);
     }
-
     public async Task<IdentityUser?> FindUserByEmailAsync(string email)
     {
         return await _userManager.FindByEmailAsync(email);
     }
-
     public async Task<IdentityUser?> FindUserByIdAsync(string id)
     {
         return await _userManager.FindByIdAsync(id);
     }
-
     public async Task<(IdentityUser? User, IdentityResult Result)> CreateUserAsync(
-        string userName,
-        string email,
-        string password,
-        IEnumerable<string>? roles = null)
+    string userName,
+    string email,
+    string password,
+    string? role = null)
     {
-        var requestedRoles = NormalizeRoles(roles);
+        var selectedRole = string.IsNullOrWhiteSpace(role)
+            ? AppRoles.User
+            : role.Trim();
 
-        foreach (var role in requestedRoles)
+        if (!AppRoles.All.Contains(selectedRole, StringComparer.OrdinalIgnoreCase))
         {
-            if (!await _roleManager.RoleExistsAsync(role))
+            return (null, IdentityResult.Failed(new IdentityError
             {
-                return (null, IdentityResult.Failed(new IdentityError
-                {
-                    Code = "RoleNotFound",
-                    Description = $"Role '{role}' does not exist."
-                }));
-            }
+                Code = "InvalidRole",
+                Description = "Допустимые роли: User или Admin."
+            }));
+        }
+
+        selectedRole = AppRoles.All.First(r =>
+            string.Equals(r, selectedRole, StringComparison.OrdinalIgnoreCase));
+
+        if (!await _roleManager.RoleExistsAsync(selectedRole))
+        {
+            return (null, IdentityResult.Failed(new IdentityError
+            {
+                Code = "RoleNotFound",
+                Description = $"Роль '{selectedRole}' не существует в базе данных."
+            }));
         }
 
         var user = new IdentityUser
@@ -1350,31 +1326,22 @@ public class DataAccessor(
         var createResult = await _userManager.CreateAsync(user, password);
 
         if (!createResult.Succeeded)
-        {
             return (null, createResult);
-        }
 
-        if (requestedRoles.Count > 0)
+        var roleResult = await _userManager.AddToRoleAsync(user, selectedRole);
+
+        if (!roleResult.Succeeded)
         {
-            var roleResult = await _userManager.AddToRolesAsync(
-                user,
-                requestedRoles);
-
-            if (!roleResult.Succeeded)
-            {
-                await _userManager.DeleteAsync(user);
-                return (null, roleResult);
-            }
+            await _userManager.DeleteAsync(user);
+            return (null, roleResult);
         }
 
         return (user, IdentityResult.Success);
     }
-
     public async Task<IdentityResult> UpdateUserAsync(
         string id,
         string userName,
-        string email,
-        IEnumerable<string>? roles = null)
+        string email)
     {
         var user = await _userManager.FindByIdAsync(id);
 
@@ -1387,67 +1354,98 @@ public class DataAccessor(
             });
         }
 
-        var requestedRoles = NormalizeRoles(roles);
-
-        foreach (var role in requestedRoles)
-        {
-            if (!await _roleManager.RoleExistsAsync(role))
-            {
-                return IdentityResult.Failed(new IdentityError
-                {
-                    Code = "RoleNotFound",
-                    Description = $"Role '{role}' does not exist."
-                });
-            }
-        }
-
         user.UserName = userName.Trim();
         user.Email = email.Trim();
 
-        var updateResult = await _userManager.UpdateAsync(user);
+        return await _userManager.UpdateAsync(user);
+    }
+    public async Task<IdentityResult> UpdateUserRoleAsync(
+        string userId,
+        string role)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
 
-        if (!updateResult.Succeeded)
+        if (user is null)
         {
-            return updateResult;
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "UserNotFound",
+                Description = "Пользователь не найден."
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(role))
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "InvalidRole",
+                Description = "Укажите роль User или Admin."
+            });
+        }
+
+        var selectedRole = AppRoles.All.FirstOrDefault(r =>
+            string.Equals(r, role.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        if (selectedRole is null)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "InvalidRole",
+                Description = "Допустимые роли: User или Admin."
+            });
+        }
+
+        if (!await _roleManager.RoleExistsAsync(selectedRole))
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "RoleNotFound",
+                Description = $"Роль '{selectedRole}' не существует."
+            });
         }
 
         var currentRoles = await _userManager.GetRolesAsync(user);
 
-        var rolesToRemove = currentRoles
-            .Except(requestedRoles, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        if (currentRoles.Count == 1 && currentRoles[0] == selectedRole)
+            return IdentityResult.Success;
 
-        var rolesToAdd = requestedRoles
-            .Except(currentRoles, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (rolesToRemove.Length > 0)
+        if (currentRoles.Contains(AppRoles.Admin) &&
+            selectedRole != AppRoles.Admin)
         {
-            var removeResult = await _userManager.RemoveFromRolesAsync(
-                user,
-                rolesToRemove);
+            var admins = await _userManager.GetUsersInRoleAsync(AppRoles.Admin);
 
-            if (!removeResult.Succeeded)
+            if (admins.Count <= 1)
             {
-                return removeResult;
+                return IdentityResult.Failed(new IdentityError
+                {
+                    Code = "LastAdmin",
+                    Description = "Нельзя снять роль Admin с последнего администратора."
+                });
             }
         }
 
-        if (rolesToAdd.Length > 0)
+        if (currentRoles.Count > 0)
         {
-            var addResult = await _userManager.AddToRolesAsync(
+            var removeResult = await _userManager.RemoveFromRolesAsync(
                 user,
-                rolesToAdd);
+                currentRoles);
 
-            if (!addResult.Succeeded)
-            {
-                return addResult;
-            }
+            if (!removeResult.Succeeded)
+                return removeResult;
+        }
+
+        var addResult = await _userManager.AddToRoleAsync(user, selectedRole);
+
+        if (!addResult.Succeeded)
+        {
+            if (currentRoles.Count > 0)
+                await _userManager.AddToRolesAsync(user, currentRoles);
+
+            return addResult;
         }
 
         return IdentityResult.Success;
     }
-
     public async Task<IdentityResult> UpdateUserProfileAsync(
         string id,
         string userName,
@@ -1469,7 +1467,6 @@ public class DataAccessor(
 
         return await _userManager.UpdateAsync(user);
     }
-
     public async Task<IdentityResult> ChangeUserPasswordAsync(
         string id,
         string currentPassword,
@@ -1491,7 +1488,6 @@ public class DataAccessor(
             currentPassword,
             newPassword);
     }
-
     public async Task<IdentityResult> DeleteUserAsync(string id)
     {
         var user = await _userManager.FindByIdAsync(id);
@@ -1507,7 +1503,6 @@ public class DataAccessor(
 
         return await _userManager.DeleteAsync(user);
     }
-
     private async Task<UserDto> MapUserAsync(IdentityUser user)
     {
         var roles = await _userManager.GetRolesAsync(user);
@@ -1522,7 +1517,6 @@ public class DataAccessor(
             Roles = roles.ToList()
         };
     }
-
     private static List<string> NormalizeRoles(IEnumerable<string>? roles)
     {
         return (roles ?? [])
@@ -1532,6 +1526,26 @@ public class DataAccessor(
             .ToList();
     }
 
-    #endregion
+    public async Task EnsureRolesCreatedAsync()
+    {
+        foreach (var role in AppRoles.All)
+        {
+            if (!await _roleManager.RoleExistsAsync(role))
+            {
+                var result = await _roleManager.CreateAsync(
+                    new IdentityRole(role));
 
+                if (!result.Succeeded)
+                {
+                    var errors = string.Join(
+                        "; ",
+                        result.Errors.Select(e => e.Description));
+
+                    throw new InvalidOperationException(
+                        $"Не удалось создать роль '{role}': {errors}");
+                }
+            }
+        }
+    }
+    #endregion
 }

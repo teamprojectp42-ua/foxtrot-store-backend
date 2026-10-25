@@ -1,7 +1,4 @@
-﻿
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
+﻿using foxtrot_store_backend.Constants;
 using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Models.Auth;
 using foxtrot_store_backend.Models.Rest;
@@ -9,6 +6,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -20,7 +20,6 @@ public class AuthController(
     SignInManager<IdentityUser> signInManager,
     IConfiguration configuration) : ControllerBase
 {
-    private const string AdminRole = "Admin";
 
     [HttpPost("register")]
     [AllowAnonymous]
@@ -155,7 +154,7 @@ public class AuthController(
     }
 
     [HttpGet("users")]
-    [Authorize(Roles = AdminRole)]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> GetUsers()
     {
         var users = await dataAccessor.GetUsersAsync();
@@ -168,7 +167,7 @@ public class AuthController(
     }
 
     [HttpGet("users/{id}")]
-    [Authorize(Roles = AdminRole)]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> GetUser(string id)
     {
         var user = await dataAccessor.GetUserByIdAsync(id);
@@ -184,14 +183,14 @@ public class AuthController(
     }
 
     [HttpPost("users")]
-    [Authorize(Roles = AdminRole)]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> CreateUser(UserCreateRequest request)
     {
         var (user, result) = await dataAccessor.CreateUserAsync(
             request.UserName,
             request.Email,
             request.Password,
-            request.Roles);
+            request.Role);
 
         if (!result.Succeeded)
             return IdentityErrorResponse(result);
@@ -204,7 +203,7 @@ public class AuthController(
     }
 
     [HttpPut("users/{id}")]
-    [Authorize(Roles = AdminRole)]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> UpdateUser(
         string id,
         UserUpdateRequest request)
@@ -212,8 +211,7 @@ public class AuthController(
         var result = await dataAccessor.UpdateUserAsync(
             id,
             request.UserName,
-            request.Email,
-            request.Roles);
+            request.Email);
 
         if (!result.Succeeded)
         {
@@ -230,8 +228,33 @@ public class AuthController(
         });
     }
 
+    [HttpPut("users/{id}/role")]
+    [Authorize(Roles = AppRoles.Admin)]
+    public async Task<IActionResult> UpdateUserRole(
+    string id,
+    UpdateUserRoleRequest request)
+    {
+        var result = await dataAccessor.UpdateUserRoleAsync(
+            id,
+            request.Role);
+
+        if (!result.Succeeded)
+        {
+            if (result.Errors.Any(e => e.Code == "UserNotFound"))
+                return NotFound();
+
+            return IdentityErrorResponse(result);
+        }
+
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Data = await dataAccessor.GetUserByIdAsync(id)
+        });
+    }
+
     [HttpDelete("users/{id}")]
-    [Authorize(Roles = AdminRole)]
+    [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> DeleteUser(string id)
     {
         var currentUserId = GetCurrentUserId();

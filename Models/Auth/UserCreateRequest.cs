@@ -1,4 +1,4 @@
-﻿
+﻿using foxtrot_store_backend.Constants;
 using System.ComponentModel.DataAnnotations;
 
 namespace foxtrot_store_backend.Models.Auth;
@@ -18,5 +18,5 @@ public sealed class UserCreateRequest
     [StringLength(100, MinimumLength = 8)]
     public string Password { get; set; } = string.Empty;
 
-    public List<string> Roles { get; set; } = [];
+    public string Role { get; set; } = AppRoles.User;
 }

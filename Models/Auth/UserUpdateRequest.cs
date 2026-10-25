@@ -13,6 +13,4 @@ public sealed class UserUpdateRequest
     [EmailAddress]
     [StringLength(256)]
     public string Email { get; set; } = string.Empty;
-
-    public List<string> Roles { get; set; } = [];
 }
