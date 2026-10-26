@@ -1,4 +1,4 @@
-
+using foxtrot_store_backend.Services.LocalStorage;
 using System.Text;
 using foxtrot_store_backend.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -83,6 +83,8 @@ builder.Services
     });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddLocalStorage(builder.Configuration);
 
 var app = builder.Build();
 
