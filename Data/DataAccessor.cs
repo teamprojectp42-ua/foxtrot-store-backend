@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using foxtrot_store_backend.Models.Auth;
 using foxtrot_store_backend.Constants;
+using MySql.Data.MySqlClient;
 
 namespace foxtrot_store_backend.Data;
 
@@ -87,6 +88,31 @@ public class DataAccessor(
     public async Task<ProductCatalogResponseDto> GetProductsAsync(
         ProductCatalogQuery query)
     {
+        if (query.Page < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(query.Page),
+                "Page must be greater than zero.");
+        }
+
+        if (query.PageSize < 1 || query.PageSize > 100)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(query.PageSize),
+                "PageSize must be between 1 and 100.");
+        }
+
+        var offset = ((long)query.Page - 1) * query.PageSize;
+
+        if (offset > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(query.Page),
+                "The requested page is too large.");
+        }
+
+        var skip = (int)offset;
+
         IQueryable<Product> products = _dataContext.Products
             .AsNoTracking()
             .Where(product => product.IsActive);
@@ -173,7 +199,7 @@ public class DataAccessor(
         var totalCount = await products.CountAsync();
 
         var items = await products
-            .Skip((query.Page - 1) * query.PageSize)
+            .Skip(skip)
             .Take(query.PageSize)
             .Select(product => new ProductListItemDto
             {
@@ -206,6 +232,15 @@ public class DataAccessor(
             })
             .ToListAsync();
 
+        foreach (var item in items)
+        {
+            if (item.PrimaryImageUrl is not null)
+            {
+                item.PrimaryImageUrl =
+                    BuildProductImageUrl(item.PrimaryImageUrl);
+            }
+        }
+
         return new ProductCatalogResponseDto
         {
             Items = items,
@@ -218,7 +253,7 @@ public class DataAccessor(
     }
     public async Task<ProductDetailsDto?> GetProductByIdAsync(Guid id)
     {
-        return await _dataContext.Products
+        var product = await _dataContext.Products
             .AsNoTracking()
             .Where(product =>
                 product.Id == id &&
@@ -270,11 +305,21 @@ public class DataAccessor(
                     .ToList()
             })
             .FirstOrDefaultAsync();
+
+        if (product is not null)
+        {
+            foreach (var image in product.Images)
+            {
+                image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
+            }
+        }
+
+        return product;
     }
     public async Task<ProductDetailsDto?> GetProductBySlugAsync(
         string slug)
     {
-        return await _dataContext.Products
+        var product = await _dataContext.Products
             .AsNoTracking()
             .Where(product =>
                 product.Slug == slug &&
@@ -326,6 +371,16 @@ public class DataAccessor(
                     .ToList()
             })
             .FirstOrDefaultAsync();
+
+        if (product is not null)
+        {
+            foreach (var image in product.Images)
+            {
+                image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
+            }
+        }
+
+        return product;
     }
     public async Task<ProductDetailsDto> CreateProductAsync(
         ProductCreateRequest request)
@@ -439,8 +494,7 @@ public class DataAccessor(
                 });
         }
 
-        // EF Core uses a transaction for this relational SaveChanges operation.
-        await _dataContext.SaveChangesAsync();
+        await SaveChangesOrThrowConflictAsync();
 
         var createdProduct = await GetProductByIdAsync(product.Id);
 
@@ -448,9 +502,10 @@ public class DataAccessor(
             ?? throw new InvalidOperationException(
                 "The product was created but could not be retrieved.");
     }
-    public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(Guid id)
+    public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(
+    Guid id)
     {
-        return await _dataContext.Products
+        var product = await _dataContext.Products
             .AsNoTracking()
             .Where(product => product.Id == id)
             .Select(product => new ProductDetailsDto
@@ -464,14 +519,18 @@ public class DataAccessor(
                 StockQuantity = product.StockQuantity,
                 IsActive = product.IsActive,
 
-                BrandName = product.Brand != null && product.Brand.IsActive
+                BrandName = product.Brand != null &&
+                            product.Brand.IsActive
                     ? product.Brand.Name
                     : null,
 
                 Categories = product.ProductCategories
-                    .Where(pc => pc.Category.IsActive)
-                    .OrderBy(pc => pc.Category.SortOrder)
-                    .Select(pc => pc.Category.Name)
+                    .Where(productCategory =>
+                        productCategory.Category.IsActive)
+                    .OrderBy(productCategory =>
+                        productCategory.Category.SortOrder)
+                    .Select(productCategory =>
+                        productCategory.Category.Name)
                     .ToList(),
 
                 Images = product.Images
@@ -496,15 +555,27 @@ public class DataAccessor(
                     .ToList()
             })
             .FirstOrDefaultAsync();
+
+        if (product is not null)
+        {
+            foreach (var image in product.Images)
+            {
+                image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
+            }
+        }
+
+        return product;
     }
     public async Task<ProductDetailsDto?> UpdateProductAsync(
-        Guid id,
-        ProductUpdateRequest request)
+    Guid id,
+    ProductUpdateRequest request)
     {
+        // Includes inactive products intentionally:
+        // administrators may edit archived products.
         var product = await _dataContext.Products
-             .Include(p => p.ProductCategories)
-             .Include(p => p.Specifications)
-             .FirstOrDefaultAsync(p => p.Id == id);
+            .Include(p => p.ProductCategories)
+            .Include(p => p.Specifications)
+            .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product is null)
         {
@@ -531,7 +602,8 @@ public class DataAccessor(
         if (request.BrandId.HasValue)
         {
             var brandExists = await _dataContext.Brands.AnyAsync(
-                brand => brand.Id == request.BrandId.Value && brand.IsActive);
+                brand => brand.Id == request.BrandId.Value
+                         && brand.IsActive);
 
             if (!brandExists)
             {
@@ -550,8 +622,10 @@ public class DataAccessor(
 
         if (categoryIds.Count > 0)
         {
-            var activeCategoryCount = await _dataContext.Categories.CountAsync(
-                category => categoryIds.Contains(category.Id) && category.IsActive);
+            var activeCategoryCount =
+                await _dataContext.Categories.CountAsync(
+                    category => categoryIds.Contains(category.Id)
+                                && category.IsActive);
 
             if (activeCategoryCount != categoryIds.Count)
             {
@@ -560,6 +634,29 @@ public class DataAccessor(
             }
         }
 
+        // Normalize and validate specification names before modifying the product.
+        var specifications = request.Specifications
+            .Select(specification => new
+            {
+                Name = specification.Name.Trim(),
+                Value = specification.Value.Trim(),
+                specification.SortOrder
+            })
+            .ToList();
+
+        var specificationNames = specifications
+            .Select(specification => specification.Name)
+            .ToList();
+
+        if (specificationNames.Distinct(
+                StringComparer.OrdinalIgnoreCase).Count()
+            != specificationNames.Count)
+        {
+            throw new ArgumentException(
+                "Duplicate specification names are not allowed.");
+        }
+
+        // Update product fields. IsActive is deliberately not changed here.
         product.Sku = sku;
         product.Name = request.Name.Trim();
         product.Slug = slug;
@@ -567,15 +664,15 @@ public class DataAccessor(
         product.Price = request.Price;
         product.StockQuantity = request.StockQuantity;
         product.BrandId = request.BrandId;
-        product.IsActive = request.IsActive ?? product.IsActive;
         product.UpdatedAt = DateTime.UtcNow;
 
-        // Update category links by difference. ProductCategory commonly uses a
-        // composite key, so do not delete and re-add the same keys in one context.
-        var requestedCategoryIdSet = categoryIds.ToHashSet();
+        // Synchronize category links.
+        var requestedCategoryIds = categoryIds.ToHashSet();
+
         var linksToRemove = product.ProductCategories
-            .Where(link => !requestedCategoryIdSet.Contains(link.CategoryId))
+            .Where(link => !requestedCategoryIds.Contains(link.CategoryId))
             .ToList();
+
         _dataContext.ProductCategories.RemoveRange(linksToRemove);
 
         var currentCategoryIds = product.ProductCategories
@@ -592,22 +689,49 @@ public class DataAccessor(
             });
         }
 
-        _dataContext.ProductSpecifications.RemoveRange(
-            product.Specifications);
+        // Remove specifications omitted from the request.
+        var requestedSpecificationNames = specificationNames
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var specification in request.Specifications)
+        var specificationsToRemove = product.Specifications
+            .Where(existing =>
+                !requestedSpecificationNames.Contains(existing.Name))
+            .ToList();
+
+        _dataContext.ProductSpecifications.RemoveRange(
+            specificationsToRemove);
+
+        // Update matching specifications in place; add only genuinely new ones.
+        foreach (var specification in specifications)
         {
-            _dataContext.ProductSpecifications.Add(new ProductSpecification
+            var existingSpecification = product.Specifications
+                .FirstOrDefault(existing =>
+                    string.Equals(
+                        existing.Name,
+                        specification.Name,
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (existingSpecification is not null)
             {
-                Id = await GetDbIdentityAsync(),
-                ProductId = product.Id,
-                Name = specification.Name.Trim(),
-                Value = specification.Value.Trim(),
-                SortOrder = specification.SortOrder
-            });
+                existingSpecification.Name = specification.Name;
+                existingSpecification.Value = specification.Value;
+                existingSpecification.SortOrder = specification.SortOrder;
+
+                continue;
+            }
+
+            _dataContext.ProductSpecifications.Add(
+                new ProductSpecification
+                {
+                    Id = await GetDbIdentityAsync(),
+                    ProductId = product.Id,
+                    Name = specification.Name,
+                    Value = specification.Value,
+                    SortOrder = specification.SortOrder
+                });
         }
 
-        await _dataContext.SaveChangesAsync();
+        await SaveChangesOrThrowConflictAsync();
 
         return await GetProductForAdminByIdAsync(id)
             ?? throw new InvalidOperationException(
@@ -628,6 +752,23 @@ public class DataAccessor(
         product.UpdatedAt = DateTime.UtcNow;
 
         await _dataContext.SaveChangesAsync();
+        return true;
+    }
+    public async Task<bool> RestoreProductAsync(Guid id)
+    {
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(p => p.Id == id && !p.IsActive);
+
+        if (product is null)
+        {
+            return false;
+        }
+
+        product.IsActive = true;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync();
+
         return true;
     }
 
@@ -1571,4 +1712,44 @@ public class DataAccessor(
         }
     }
     #endregion
+
+
+
+    private async Task SaveChangesOrThrowConflictAsync()
+    {
+        try
+        {
+            await _dataContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException exception)
+            when (IsDuplicateKeyViolation(exception))
+        {
+            throw new InvalidOperationException(
+                "A product or one of its related records conflicts " +
+                "with an existing unique value.",
+                exception);
+        }
+    }
+
+    private static bool IsDuplicateKeyViolation(
+        DbUpdateException exception)
+    {
+        for (Exception? current = exception;
+             current is not null;
+             current = current.InnerException)
+        {
+            if (current is MySqlException mysqlException
+                && mysqlException.Number == 1062)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string BuildProductImageUrl(string imageKey)
+    {
+        return $"/api/products/images/{Uri.EscapeDataString(imageKey)}";
+    }
 }

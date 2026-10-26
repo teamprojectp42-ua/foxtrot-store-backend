@@ -34,6 +34,21 @@ public class ProductsController(
                 "PageSize must be between 1 and 100.");
         }
 
+        if (query.Page >= 1 &&
+            query.PageSize >= 1 &&
+            query.PageSize <= 100)
+        {
+            var requestedOffset =
+                ((long)query.Page - 1) * query.PageSize;
+
+            if (requestedOffset > int.MaxValue)
+            {
+                ModelState.AddModelError(
+                    nameof(query.Page),
+                    "The requested page is too large.");
+            }
+        }
+
         if (query.MinPrice < 0)
         {
             ModelState.AddModelError(
@@ -416,6 +431,53 @@ public class ProductsController(
             Status = RestStatus.Ok,
             Meta = new RestMeta { ApiName = "Product" },
             Data = new { message = "Product deactivated successfully." }
+        });
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{id:guid}/restore")]
+    public async Task<IActionResult> RestoreProduct(Guid id)
+    {
+        var restored = await _dataAccessor.RestoreProductAsync(id);
+
+        if (!restored)
+        {
+            return NotFound(new RestResponse
+            {
+                Status = RestStatus.NotFound,
+                Meta = new RestMeta
+                {
+                    ApiName = "Product",
+                    Links =
+                {
+                    ["self"] = $"/api/products/{id}/restore"
+                }
+                },
+                Data = new
+                {
+                    message = "Inactive product not found or already active."
+                }
+            });
+        }
+
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Meta = new RestMeta
+            {
+                ApiName = "Product",
+                DataType = "json/object",
+                Manipulations = ["POST"],
+                Links =
+            {
+                ["self"] = $"/api/products/{id}/restore",
+                ["parent"] = "/api/products"
+            }
+            },
+            Data = new
+            {
+                message = "Product restored successfully."
+            }
         });
     }
 
