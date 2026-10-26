@@ -19,12 +19,11 @@ public class DataAccessor(
     private readonly UserManager<IdentityUser> _userManager = userManager;
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
 
-    public Guid GetDbIdentity()
+    public Task<Guid> GetDbIdentityAsync()
     {
         return _dataContext.Database
             .SqlQuery<Guid>($"SELECT UUID() AS Value")
-            .AsEnumerable()
-            .First();
+            .SingleAsync();
     }
 
     public async Task<ProductCatalogResponseDto> GetProductsAsync(
@@ -337,9 +336,10 @@ public class DataAccessor(
 
         var now = DateTime.UtcNow;
 
+        var productId = await GetDbIdentityAsync();
         var product = new Product
         {
-            Id = Guid.NewGuid(),
+            Id = productId,
             Sku = sku,
             Name = request.Name.Trim(),
             Slug = slug,
@@ -367,7 +367,7 @@ public class DataAccessor(
         {
             _dataContext.ProductImages.Add(new ProductImage
             {
-                Id = Guid.NewGuid(),
+                Id = await GetDbIdentityAsync(),
                 ProductId = product.Id,
                 ImageUrl = image.ImageUrl.Trim(),
                 IsPrimary = image.IsPrimary,
@@ -380,7 +380,7 @@ public class DataAccessor(
             _dataContext.ProductSpecifications.Add(
                 new ProductSpecification
                 {
-                    Id = Guid.NewGuid(),
+                    Id = await GetDbIdentityAsync(),
                     ProductId = product.Id,
                     Name = specification.Name.Trim(),
                     Value = specification.Value.Trim(),
@@ -724,7 +724,7 @@ public class DataAccessor(
         {
             _dataContext.ProductImages.Add(new ProductImage
             {
-                Id = Guid.NewGuid(),
+                Id = await GetDbIdentityAsync(),
                 ProductId = product.Id,
                 ImageUrl = image.ImageUrl.Trim(),
                 IsPrimary = image.IsPrimary,
@@ -736,7 +736,7 @@ public class DataAccessor(
         {
             _dataContext.ProductSpecifications.Add(new ProductSpecification
             {
-                Id = Guid.NewGuid(),
+                Id = await GetDbIdentityAsync(),
                 ProductId = product.Id,
                 Name = specification.Name.Trim(),
                 Value = specification.Value.Trim(),

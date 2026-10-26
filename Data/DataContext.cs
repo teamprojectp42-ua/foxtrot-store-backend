@@ -34,6 +34,9 @@ public class DataContext(DbContextOptions<DataContext> options)
                 .WithMany(brand => brand.Products)
                 .HasForeignKey(product => product.BrandId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(product => product.Price)
+                .HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<Brand>(entity =>

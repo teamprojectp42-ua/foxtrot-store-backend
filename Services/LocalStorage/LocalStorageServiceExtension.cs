@@ -1,7 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-
-namespace foxtrot_store_backend.Services.LocalStorage;
+﻿namespace foxtrot_store_backend.Services.LocalStorage;
 
 public static class LocalStorageServiceExtension
 {
