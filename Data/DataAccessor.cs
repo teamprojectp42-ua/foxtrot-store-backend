@@ -26,6 +26,64 @@ public class DataAccessor(
             .SingleAsync();
     }
 
+    public async Task<bool> AddProductImageAsync(
+    Guid productId,
+    string imageKey,
+    bool isPrimary,
+    int sortOrder,
+    CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey))
+        {
+            throw new ArgumentException(
+                "Image key cannot be empty.",
+                nameof(imageKey));
+        }
+
+        if (sortOrder < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sortOrder),
+                "SortOrder cannot be negative.");
+        }
+
+        var product = await _dataContext.Products
+            .Include(product => product.Images)
+            .FirstOrDefaultAsync(
+                product => product.Id == productId && product.IsActive,
+                cancellationToken);
+
+        if (product is null)
+        {
+            return false;
+        }
+
+        // A product can have at most one primary image.
+        if (isPrimary)
+        {
+            foreach (var existingImage in product.Images)
+            {
+                existingImage.IsPrimary = false;
+            }
+        }
+
+        var image = new ProductImage
+        {
+            Id = await GetDbIdentityAsync(),
+            ProductId = product.Id,
+            ImageUrl = imageKey.Trim(),
+            IsPrimary = isPrimary,
+            SortOrder = sortOrder
+        };
+
+        _dataContext.ProductImages.Add(image);
+
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
     public async Task<ProductCatalogResponseDto> GetProductsAsync(
         ProductCatalogQuery query)
     {
@@ -327,11 +385,16 @@ public class DataAccessor(
             }
         }
 
-        // Allow at most one primary image.
-        if (request.Images.Count(image => image.IsPrimary) > 1)
+        // Validate specification names.
+        var specificationNames = request.Specifications
+            .Select(specification => specification.Name.Trim())
+            .ToList();
+
+        if (specificationNames.Distinct(StringComparer.OrdinalIgnoreCase).Count()
+            != specificationNames.Count)
         {
             throw new ArgumentException(
-                "Only one primary image is allowed.");
+                "Duplicate specification names are not allowed.");
         }
 
         var now = DateTime.UtcNow;
@@ -363,18 +426,6 @@ public class DataAccessor(
             });
         }
 
-        foreach (var image in request.Images)
-        {
-            _dataContext.ProductImages.Add(new ProductImage
-            {
-                Id = await GetDbIdentityAsync(),
-                ProductId = product.Id,
-                ImageUrl = image.ImageUrl.Trim(),
-                IsPrimary = image.IsPrimary,
-                SortOrder = image.SortOrder
-            });
-        }
-
         foreach (var specification in request.Specifications)
         {
             _dataContext.ProductSpecifications.Add(
@@ -396,6 +447,188 @@ public class DataAccessor(
         return createdProduct
             ?? throw new InvalidOperationException(
                 "The product was created but could not be retrieved.");
+    }
+    public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(Guid id)
+    {
+        return await _dataContext.Products
+            .AsNoTracking()
+            .Where(product => product.Id == id)
+            .Select(product => new ProductDetailsDto
+            {
+                Id = product.Id,
+                Sku = product.Sku,
+                Name = product.Name,
+                Slug = product.Slug,
+                Description = product.Description,
+                Price = product.Price,
+                StockQuantity = product.StockQuantity,
+                IsActive = product.IsActive,
+
+                BrandName = product.Brand != null && product.Brand.IsActive
+                    ? product.Brand.Name
+                    : null,
+
+                Categories = product.ProductCategories
+                    .Where(pc => pc.Category.IsActive)
+                    .OrderBy(pc => pc.Category.SortOrder)
+                    .Select(pc => pc.Category.Name)
+                    .ToList(),
+
+                Images = product.Images
+                    .OrderByDescending(image => image.IsPrimary)
+                    .ThenBy(image => image.SortOrder)
+                    .Select(image => new ProductImageDto
+                    {
+                        ImageUrl = image.ImageUrl,
+                        IsPrimary = image.IsPrimary,
+                        SortOrder = image.SortOrder
+                    })
+                    .ToList(),
+
+                Specifications = product.Specifications
+                    .OrderBy(specification => specification.SortOrder)
+                    .Select(specification => new ProductSpecificationDto
+                    {
+                        Name = specification.Name,
+                        Value = specification.Value,
+                        SortOrder = specification.SortOrder
+                    })
+                    .ToList()
+            })
+            .FirstOrDefaultAsync();
+    }
+    public async Task<ProductDetailsDto?> UpdateProductAsync(
+        Guid id,
+        ProductUpdateRequest request)
+    {
+        var product = await _dataContext.Products
+             .Include(p => p.ProductCategories)
+             .Include(p => p.Specifications)
+             .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (product is null)
+        {
+            return null;
+        }
+
+        var sku = request.Sku.Trim();
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Products.AnyAsync(
+            p => p.Id != id && p.Sku == sku))
+        {
+            throw new InvalidOperationException(
+                "A product with this SKU already exists.");
+        }
+
+        if (await _dataContext.Products.AnyAsync(
+            p => p.Id != id && p.Slug == slug))
+        {
+            throw new InvalidOperationException(
+                "A product with this slug already exists.");
+        }
+
+        if (request.BrandId.HasValue)
+        {
+            var brandExists = await _dataContext.Brands.AnyAsync(
+                brand => brand.Id == request.BrandId.Value && brand.IsActive);
+
+            if (!brandExists)
+            {
+                throw new ArgumentException(
+                    "The specified brand does not exist or is inactive.");
+            }
+        }
+
+        var categoryIds = request.CategoryIds.Distinct().ToList();
+
+        if (categoryIds.Count != request.CategoryIds.Count)
+        {
+            throw new ArgumentException(
+                "Duplicate category IDs are not allowed.");
+        }
+
+        if (categoryIds.Count > 0)
+        {
+            var activeCategoryCount = await _dataContext.Categories.CountAsync(
+                category => categoryIds.Contains(category.Id) && category.IsActive);
+
+            if (activeCategoryCount != categoryIds.Count)
+            {
+                throw new ArgumentException(
+                    "One or more categories do not exist or are inactive.");
+            }
+        }
+
+        product.Sku = sku;
+        product.Name = request.Name.Trim();
+        product.Slug = slug;
+        product.Description = request.Description.Trim();
+        product.Price = request.Price;
+        product.StockQuantity = request.StockQuantity;
+        product.BrandId = request.BrandId;
+        product.IsActive = request.IsActive ?? product.IsActive;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        // Update category links by difference. ProductCategory commonly uses a
+        // composite key, so do not delete and re-add the same keys in one context.
+        var requestedCategoryIdSet = categoryIds.ToHashSet();
+        var linksToRemove = product.ProductCategories
+            .Where(link => !requestedCategoryIdSet.Contains(link.CategoryId))
+            .ToList();
+        _dataContext.ProductCategories.RemoveRange(linksToRemove);
+
+        var currentCategoryIds = product.ProductCategories
+            .Select(link => link.CategoryId)
+            .ToHashSet();
+
+        foreach (var categoryId in categoryIds.Where(
+            categoryId => !currentCategoryIds.Contains(categoryId)))
+        {
+            _dataContext.ProductCategories.Add(new ProductCategory
+            {
+                ProductId = product.Id,
+                CategoryId = categoryId
+            });
+        }
+
+        _dataContext.ProductSpecifications.RemoveRange(
+            product.Specifications);
+
+        foreach (var specification in request.Specifications)
+        {
+            _dataContext.ProductSpecifications.Add(new ProductSpecification
+            {
+                Id = await GetDbIdentityAsync(),
+                ProductId = product.Id,
+                Name = specification.Name.Trim(),
+                Value = specification.Value.Trim(),
+                SortOrder = specification.SortOrder
+            });
+        }
+
+        await _dataContext.SaveChangesAsync();
+
+        return await GetProductForAdminByIdAsync(id)
+            ?? throw new InvalidOperationException(
+                "The product was updated but could not be retrieved.");
+    }
+    public async Task<bool> DeleteProductAsync(Guid id)
+    {
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive);
+
+        if (product is null)
+        {
+            return false;
+        }
+
+        // Soft delete: public catalog queries already filter IsActive == true.
+        product.IsActive = false;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync();
+        return true;
     }
 
     public async Task<List<BrandDto>> GetBrandsAsync()
@@ -565,208 +798,6 @@ public class DataAccessor(
         }
     }
 
-    public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(Guid id)
-    {
-        return await _dataContext.Products
-            .AsNoTracking()
-            .Where(product => product.Id == id)
-            .Select(product => new ProductDetailsDto
-            {
-                Id = product.Id,
-                Sku = product.Sku,
-                Name = product.Name,
-                Slug = product.Slug,
-                Description = product.Description,
-                Price = product.Price,
-                StockQuantity = product.StockQuantity,
-                IsActive = product.IsActive,
-
-                BrandName = product.Brand != null && product.Brand.IsActive
-                    ? product.Brand.Name
-                    : null,
-
-                Categories = product.ProductCategories
-                    .Where(pc => pc.Category.IsActive)
-                    .OrderBy(pc => pc.Category.SortOrder)
-                    .Select(pc => pc.Category.Name)
-                    .ToList(),
-
-                Images = product.Images
-                    .OrderByDescending(image => image.IsPrimary)
-                    .ThenBy(image => image.SortOrder)
-                    .Select(image => new ProductImageDto
-                    {
-                        ImageUrl = image.ImageUrl,
-                        IsPrimary = image.IsPrimary,
-                        SortOrder = image.SortOrder
-                    })
-                    .ToList(),
-
-                Specifications = product.Specifications
-                    .OrderBy(specification => specification.SortOrder)
-                    .Select(specification => new ProductSpecificationDto
-                    {
-                        Name = specification.Name,
-                        Value = specification.Value,
-                        SortOrder = specification.SortOrder
-                    })
-                    .ToList()
-            })
-            .FirstOrDefaultAsync();
-    }
-    public async Task<ProductDetailsDto?> UpdateProductAsync(
-        Guid id,
-        ProductUpdateRequest request)
-    {
-        var product = await _dataContext.Products
-            .Include(p => p.ProductCategories)
-            .Include(p => p.Images)
-            .Include(p => p.Specifications)
-            .FirstOrDefaultAsync(p => p.Id == id);
-
-        if (product is null)
-        {
-            return null;
-        }
-
-        var sku = request.Sku.Trim();
-        var slug = request.Slug.Trim().ToLowerInvariant();
-
-        if (await _dataContext.Products.AnyAsync(
-            p => p.Id != id && p.Sku == sku))
-        {
-            throw new InvalidOperationException(
-                "A product with this SKU already exists.");
-        }
-
-        if (await _dataContext.Products.AnyAsync(
-            p => p.Id != id && p.Slug == slug))
-        {
-            throw new InvalidOperationException(
-                "A product with this slug already exists.");
-        }
-
-        if (request.BrandId.HasValue)
-        {
-            var brandExists = await _dataContext.Brands.AnyAsync(
-                brand => brand.Id == request.BrandId.Value && brand.IsActive);
-
-            if (!brandExists)
-            {
-                throw new ArgumentException(
-                    "The specified brand does not exist or is inactive.");
-            }
-        }
-
-        var categoryIds = request.CategoryIds.Distinct().ToList();
-
-        if (categoryIds.Count != request.CategoryIds.Count)
-        {
-            throw new ArgumentException(
-                "Duplicate category IDs are not allowed.");
-        }
-
-        if (categoryIds.Count > 0)
-        {
-            var activeCategoryCount = await _dataContext.Categories.CountAsync(
-                category => categoryIds.Contains(category.Id) && category.IsActive);
-
-            if (activeCategoryCount != categoryIds.Count)
-            {
-                throw new ArgumentException(
-                    "One or more categories do not exist or are inactive.");
-            }
-        }
-
-        if (request.Images.Count(image => image.IsPrimary) > 1)
-        {
-            throw new ArgumentException(
-                "Only one primary image is allowed.");
-        }
-
-        product.Sku = sku;
-        product.Name = request.Name.Trim();
-        product.Slug = slug;
-        product.Description = request.Description.Trim();
-        product.Price = request.Price;
-        product.StockQuantity = request.StockQuantity;
-        product.BrandId = request.BrandId;
-        product.IsActive = request.IsActive ?? product.IsActive;
-        product.UpdatedAt = DateTime.UtcNow;
-
-        // Update category links by difference. ProductCategory commonly uses a
-        // composite key, so do not delete and re-add the same keys in one context.
-        var requestedCategoryIdSet = categoryIds.ToHashSet();
-        var linksToRemove = product.ProductCategories
-            .Where(link => !requestedCategoryIdSet.Contains(link.CategoryId))
-            .ToList();
-        _dataContext.ProductCategories.RemoveRange(linksToRemove);
-
-        var currentCategoryIds = product.ProductCategories
-            .Select(link => link.CategoryId)
-            .ToHashSet();
-
-        foreach (var categoryId in categoryIds.Where(
-            categoryId => !currentCategoryIds.Contains(categoryId)))
-        {
-            _dataContext.ProductCategories.Add(new ProductCategory
-            {
-                ProductId = product.Id,
-                CategoryId = categoryId
-            });
-        }
-
-        // Images and specifications use their own IDs, so replace these lists.
-        _dataContext.ProductImages.RemoveRange(product.Images);
-        _dataContext.ProductSpecifications.RemoveRange(product.Specifications);
-
-        foreach (var image in request.Images)
-        {
-            _dataContext.ProductImages.Add(new ProductImage
-            {
-                Id = await GetDbIdentityAsync(),
-                ProductId = product.Id,
-                ImageUrl = image.ImageUrl.Trim(),
-                IsPrimary = image.IsPrimary,
-                SortOrder = image.SortOrder
-            });
-        }
-
-        foreach (var specification in request.Specifications)
-        {
-            _dataContext.ProductSpecifications.Add(new ProductSpecification
-            {
-                Id = await GetDbIdentityAsync(),
-                ProductId = product.Id,
-                Name = specification.Name.Trim(),
-                Value = specification.Value.Trim(),
-                SortOrder = specification.SortOrder
-            });
-        }
-
-        await _dataContext.SaveChangesAsync();
-
-        return await GetProductForAdminByIdAsync(id)
-            ?? throw new InvalidOperationException(
-                "The product was updated but could not be retrieved.");
-    }
-    public async Task<bool> DeleteProductAsync(Guid id)
-    {
-        var product = await _dataContext.Products
-            .FirstOrDefaultAsync(p => p.Id == id && p.IsActive);
-
-        if (product is null)
-        {
-            return false;
-        }
-
-        // Soft delete: public catalog queries already filter IsActive == true.
-        product.IsActive = false;
-        product.UpdatedAt = DateTime.UtcNow;
-
-        await _dataContext.SaveChangesAsync();
-        return true;
-    }
 
     // Brands
     public async Task<BrandDto> CreateBrandAsync(

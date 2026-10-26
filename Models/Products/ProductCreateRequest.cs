@@ -31,7 +31,5 @@ public class ProductCreateRequest
 
     public List<Guid> CategoryIds { get; set; } = [];
 
-    public List<ProductImageCreateRequest> Images { get; set; } = [];
-
     public List<ProductSpecificationCreateRequest> Specifications { get; set; } = [];
 }

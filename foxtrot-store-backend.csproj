@@ -24,7 +24,7 @@
    </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="LocalStorage\Products\" />
+    <Folder Include="LocalStorage\" />
     <Folder Include="Migrations\" />
   </ItemGroup>
 

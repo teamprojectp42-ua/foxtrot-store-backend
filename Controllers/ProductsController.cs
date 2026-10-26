@@ -1,15 +1,18 @@
-﻿
+﻿using foxtrot_store_backend.Services.LocalStorage;
 using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+
 namespace foxtrot_store_backend.Controllers;
 
 [ApiController]
 [Route("api/products")]
-public class ProductsController(DataAccessor dataAccessor) : ControllerBase
+public class ProductsController(
+    DataAccessor dataAccessor,
+    ILocalStorageService localStorage) : ControllerBase
 {
     private readonly DataAccessor _dataAccessor = dataAccessor;
 
@@ -227,6 +230,55 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
         });
     }
 
+    [HttpGet("images/{imageKey}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetProductImage(
+    string imageKey,
+    CancellationToken cancellationToken)
+    {
+        var contentType = Path.GetExtension(imageKey).ToLowerInvariant() switch
+        {
+            ".jpg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            _ => null
+        };
+
+        if (contentType is null)
+        {
+            return BadRequest(new
+            {
+                message = "Unsupported image format."
+            });
+        }
+
+        Stream? imageStream;
+
+        try
+        {
+            imageStream = await localStorage.GetAsync(
+                imageKey,
+                cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest(new
+            {
+                message = "Invalid image key."
+            });
+        }
+
+        if (imageStream is null)
+        {
+            return NotFound(new
+            {
+                message = "Image not found."
+            });
+        }
+
+        return File(imageStream, contentType);
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateProduct(
@@ -364,6 +416,95 @@ public class ProductsController(DataAccessor dataAccessor) : ControllerBase
             Status = RestStatus.Ok,
             Meta = new RestMeta { ApiName = "Product" },
             Data = new { message = "Product deactivated successfully." }
+        });
+    }
+
+    [HttpPost("{id:guid}/images")]
+    [Authorize(Roles = "Admin")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadProductImage(
+    Guid id,
+    [FromForm] IFormFile? file,
+    [FromForm] bool isPrimary = false,
+    [FromForm] int sortOrder = 0,
+    CancellationToken cancellationToken = default)
+    {
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest("An image file is required.");
+        }
+
+        if (sortOrder < 0)
+        {
+            return BadRequest("SortOrder cannot be negative.");
+        }
+
+        string storageKey;
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+
+            storageKey = await localStorage.SaveAsync(
+                stream,
+                file.ContentType,
+                cancellationToken);
+        }
+        catch (InvalidDataException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+
+        try
+        {
+            var added = await dataAccessor.AddProductImageAsync(
+                id,
+                storageKey,
+                isPrimary,
+                sortOrder,
+                cancellationToken);
+
+            if (!added)
+            {
+                await localStorage.DeleteAsync(
+                    storageKey,
+                    CancellationToken.None);
+
+                return NotFound(new
+                {
+                    message = "Active product was not found."
+                });
+            }
+        }
+        catch
+        {
+            // If database persistence fails, remove the newly stored file.
+            try
+            {
+                await localStorage.DeleteAsync(
+                    storageKey,
+                    CancellationToken.None);
+            }
+            catch (Exception cleanupException)
+            {
+                // Cleanup failure must not hide the original database error.
+                HttpContext.RequestServices
+                    .GetRequiredService<ILogger<ProductsController>>()
+                    .LogError(
+                        cleanupException,
+                        "Failed to remove image {StorageKey} after upload failure.",
+                        storageKey);
+            }
+
+            throw;
+        }
+
+        return Ok(new
+        {
+            productId = id,
+            imageKey = storageKey,
+            isPrimary,
+            sortOrder
         });
     }
 }
