@@ -1517,14 +1517,6 @@ public class DataAccessor(
             Roles = roles.ToList()
         };
     }
-    private static List<string> NormalizeRoles(IEnumerable<string>? roles)
-    {
-        return (roles ?? [])
-            .Where(role => !string.IsNullOrWhiteSpace(role))
-            .Select(role => role.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
 
     public async Task EnsureRolesCreatedAsync()
     {
