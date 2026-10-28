@@ -774,6 +774,12 @@ public class DataAccessor(
         return true;
     }
 
+
+    private static string BuildProductImageUrl(string imageKey)
+    {
+        return $"/api/products/images/{Uri.EscapeDataString(imageKey)}";
+    }
+
     // Categories
     public async Task<List<CategoryDto>> GetCategoriesAsync()
     {
@@ -1138,10 +1144,29 @@ public class DataAccessor(
         }
     }
 
+
+    private static string? BuildCategoryImageUrl(string? imageKey)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey))
+        {
+            return null;
+        }
+
+        // Preserve existing absolute HTTP(S) image URLs.
+        if (Uri.TryCreate(imageKey, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp ||
+             uri.Scheme == Uri.UriSchemeHttps))
+        {
+            return imageKey;
+        }
+
+        return $"/api/categories/images/{Uri.EscapeDataString(imageKey)}";
+    }
+
     // Brands
     public async Task<List<BrandDto>> GetBrandsAsync()
     {
-        return await _dataContext.Brands
+        var brands = await _dataContext.Brands
             .AsNoTracking()
             .Where(brand => brand.IsActive)
             .OrderBy(brand => brand.Name)
@@ -1154,12 +1179,21 @@ public class DataAccessor(
                 LogoUrl = brand.LogoUrl
             })
             .ToListAsync();
+
+        foreach (var brand in brands)
+        {
+            brand.LogoUrl = BuildBrandLogoUrl(brand.LogoUrl);
+        }
+
+        return brands;
     }
     public async Task<BrandDto?> GetBrandByIdAsync(Guid id)
     {
-        return await _dataContext.Brands
+        var brand = await _dataContext.Brands
             .AsNoTracking()
-            .Where(brand => brand.Id == id && brand.IsActive)
+            .Where(brand =>
+                brand.Id == id &&
+                brand.IsActive)
             .Select(brand => new BrandDto
             {
                 Id = brand.Id,
@@ -1169,12 +1203,21 @@ public class DataAccessor(
                 LogoUrl = brand.LogoUrl
             })
             .FirstOrDefaultAsync();
+
+        if (brand is not null)
+        {
+            brand.LogoUrl = BuildBrandLogoUrl(brand.LogoUrl);
+        }
+
+        return brand;
     }
     public async Task<BrandDto?> GetBrandBySlugAsync(string slug)
     {
-        return await _dataContext.Brands
+        var brand = await _dataContext.Brands
             .AsNoTracking()
-            .Where(brand => brand.Slug == slug && brand.IsActive)
+            .Where(brand =>
+                brand.Slug == slug &&
+                brand.IsActive)
             .Select(brand => new BrandDto
             {
                 Id = brand.Id,
@@ -1184,6 +1227,13 @@ public class DataAccessor(
                 LogoUrl = brand.LogoUrl
             })
             .FirstOrDefaultAsync();
+
+        if (brand is not null)
+        {
+            brand.LogoUrl = BuildBrandLogoUrl(brand.LogoUrl);
+        }
+
+        return brand;
     }
     public async Task<bool> BrandExistsAsync(Guid id)
     {
@@ -1209,7 +1259,6 @@ public class DataAccessor(
             Name = name,
             Slug = slug,
             Description = request.Description?.Trim(),
-            LogoUrl = request.LogoUrl?.Trim(),
             IsActive = true
         };
 
@@ -1222,7 +1271,7 @@ public class DataAccessor(
             Name = brand.Name,
             Slug = brand.Slug,
             Description = brand.Description,
-            LogoUrl = brand.LogoUrl
+            LogoUrl = BuildBrandLogoUrl(brand.LogoUrl)
         };
     }
     public async Task<BrandDto?> UpdateBrandAsync(
@@ -1249,8 +1298,6 @@ public class DataAccessor(
         brand.Name = request.Name.Trim();
         brand.Slug = slug;
         brand.Description = request.Description?.Trim();
-        brand.LogoUrl = request.LogoUrl?.Trim();
-        brand.IsActive = request.IsActive;
 
         await _dataContext.SaveChangesAsync();
 
@@ -1260,25 +1307,114 @@ public class DataAccessor(
             Name = brand.Name,
             Slug = brand.Slug,
             Description = brand.Description,
-            LogoUrl = brand.LogoUrl
+            LogoUrl = BuildBrandLogoUrl(brand.LogoUrl)
         };
+    }
+    public async Task<(bool Updated, string? PreviousLogoKey)> SetBrandLogoAsync(
+        Guid brandId,
+        string logoKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(logoKey))
+        {
+            throw new ArgumentException(
+                "Logo key cannot be empty.",
+                nameof(logoKey));
+        }
+
+        var brand = await _dataContext.Brands
+            .FirstOrDefaultAsync(
+                brand =>
+                    brand.Id == brandId &&
+                    brand.IsActive,
+                cancellationToken);
+
+        if (brand is null)
+        {
+            return (false, null);
+        }
+
+        var previousLogoKey = brand.LogoUrl;
+
+        brand.LogoUrl = logoKey.Trim();
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        return (true, previousLogoKey);
     }
     public async Task<bool> DeleteBrandAsync(Guid id)
     {
         var brand = await _dataContext.Brands
-            .FirstOrDefaultAsync(b => b.Id == id);
+            .FirstOrDefaultAsync(brand =>
+                brand.Id == id && brand.IsActive);
 
         if (brand is null)
         {
             return false;
         }
 
-        _dataContext.Brands.Remove(brand);
+        brand.IsActive = false;
+
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+    public async Task<bool> RestoreBrandAsync(Guid id)
+    {
+        var brand = await _dataContext.Brands
+            .FirstOrDefaultAsync(brand =>
+                brand.Id == id && !brand.IsActive);
+
+        if (brand is null)
+        {
+            return false;
+        }
+
+        brand.IsActive = true;
+
         await _dataContext.SaveChangesAsync();
 
         return true;
     }
 
+
+    private static string? BuildBrandLogoUrl(string? logoUrl)
+    {
+        if (string.IsNullOrWhiteSpace(logoUrl))
+        {
+            return null;
+        }
+
+        var value = logoUrl.Trim();
+
+        if (IsLocalStorageLogoKey(value))
+        {
+            return $"/api/brands/images/{value}";
+        }
+
+        return value;
+    }
+    private static bool IsLocalStorageLogoKey(string logoKey)
+    {
+        if (string.IsNullOrWhiteSpace(logoKey) ||
+            Path.IsPathRooted(logoKey) ||
+            logoKey.Contains('/') ||
+            logoKey.Contains('\\'))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(logoKey).ToLowerInvariant();
+
+        if (extension is not (".jpg" or ".png" or ".webp"))
+        {
+            return false;
+        }
+
+        var fileId = Path.GetFileNameWithoutExtension(logoKey);
+
+        return Guid.TryParseExact(fileId, "N", out _);
+    }
 
     // Promotions
     public async Task<List<PromotionDto>> GetPromotionsAsync()
@@ -1844,25 +1980,4 @@ public class DataAccessor(
         return false;
     }
 
-    private static string BuildProductImageUrl(string imageKey)
-    {
-        return $"/api/products/images/{Uri.EscapeDataString(imageKey)}";
-    }
-    private static string? BuildCategoryImageUrl(string? imageKey)
-    {
-        if (string.IsNullOrWhiteSpace(imageKey))
-        {
-            return null;
-        }
-
-        // Preserve existing absolute HTTP(S) image URLs.
-        if (Uri.TryCreate(imageKey, UriKind.Absolute, out var uri) &&
-            (uri.Scheme == Uri.UriSchemeHttp ||
-             uri.Scheme == Uri.UriSchemeHttps))
-        {
-            return imageKey;
-        }
-
-        return $"/api/categories/images/{Uri.EscapeDataString(imageKey)}";
-    }
 }

@@ -1,5 +1,4 @@
-﻿
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace foxtrot_store_backend.Models.Brands;
 
@@ -17,8 +16,4 @@ public class BrandUpdateRequest
     [StringLength(1000)]
     public string? Description { get; set; }
 
-    [StringLength(2048)]
-    public string? LogoUrl { get; set; }
-
-    public bool IsActive { get; set; } = true;
 }
