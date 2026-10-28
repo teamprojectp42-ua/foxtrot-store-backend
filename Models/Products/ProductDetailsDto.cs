@@ -20,9 +20,12 @@ public class ProductDetailsDto
 
     public string? BrandName { get; set; }
 
+    public ProductPromotionPriceDto? ActivePromotion { get; set; }
+
     public List<string> Categories { get; set; } = [];
 
     public List<ProductImageDto> Images { get; set; } = [];
 
     public List<ProductSpecificationDto> Specifications { get; set; } = [];
+
 }

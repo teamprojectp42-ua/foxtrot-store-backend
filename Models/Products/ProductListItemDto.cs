@@ -20,4 +20,6 @@ public class ProductListItemDto
     public string? PrimaryImageUrl { get; set; }
 
     public List<string> Categories { get; set; } = [];
+
+    public ProductPromotionPriceDto? ActivePromotion { get; set; }
 }

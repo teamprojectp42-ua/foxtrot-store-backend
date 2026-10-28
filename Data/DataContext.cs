@@ -15,7 +15,8 @@ public class DataContext(DbContextOptions<DataContext> options)
     public DbSet<ProductSpecification> ProductSpecifications
         => Set<ProductSpecification>();
     public DbSet<Promotion> Promotions => Set<Promotion>();
-
+    public DbSet<PromotionProduct> PromotionProducts
+    => Set<PromotionProduct>();
     public DbSet<Brand> Brands => Set<Brand>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -171,6 +172,34 @@ public class DataContext(DbContextOptions<DataContext> options)
 
             entity.Property(p => p.ImageUrl)
                 .HasMaxLength(2048);
+
+            entity.Property(promotion => promotion.DiscountType)
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            entity.Property(promotion => promotion.DiscountValue)
+                .HasPrecision(18, 2);
+        });
+
+        modelBuilder.Entity<PromotionProduct>(entity =>
+        {
+            entity.HasKey(pp => new
+            {
+                pp.PromotionId,
+                pp.ProductId
+            });
+
+            entity.HasIndex(pp => pp.ProductId);
+
+            entity.HasOne(pp => pp.Promotion)
+                .WithMany(promotion => promotion.PromotionProducts)
+                .HasForeignKey(pp => pp.PromotionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(pp => pp.Product)
+                .WithMany(product => product.PromotionProducts)
+                .HasForeignKey(pp => pp.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

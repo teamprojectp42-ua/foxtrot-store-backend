@@ -14,6 +14,10 @@ public class Promotion
 
     public string? ImageUrl { get; set; }
 
+    public PromotionDiscountType? DiscountType { get; set; }
+
+    public decimal? DiscountValue { get; set; }
+
     public DateTime? StartDate { get; set; }
 
     public DateTime? EndDate { get; set; }
@@ -25,4 +29,7 @@ public class Promotion
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }
+
+    public ICollection<PromotionProduct> PromotionProducts { get; set; }
+        = new List<PromotionProduct>();
 }

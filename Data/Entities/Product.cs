@@ -21,8 +21,11 @@ public class Product
         = new List<ProductCategory>();
 
     public ICollection<ProductImage> Images { get; set; }
-    = new List<ProductImage>();
+        = new List<ProductImage>();
 
     public ICollection<ProductSpecification> Specifications { get; set; }
-    = new List<ProductSpecification>();
+        = new List<ProductSpecification>();
+
+    public ICollection<PromotionProduct> PromotionProducts { get; set; }
+        = new List<PromotionProduct>();
 }

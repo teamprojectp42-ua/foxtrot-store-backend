@@ -1,4 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using foxtrot_store_backend.Data.Entities;
+using System.Text.Json.Serialization;
 
 namespace foxtrot_store_backend.Models.Promotions;
 
@@ -18,8 +20,14 @@ public class PromotionUpdateRequest
     [MaxLength(2000)]
     public string? Description { get; set; }
 
-    public DateTime? StartDate { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public PromotionDiscountType? DiscountType { get; set; }
 
+    public decimal? DiscountValue { get; set; }
+
+    public List<Guid> ProductIds { get; set; } = [];
+
+    public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }
 
     [Required]

@@ -234,6 +234,16 @@ public class DataAccessor(
             })
             .ToListAsync();
 
+        var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+            items.Select(item => item.Id));
+
+        foreach (var item in items)
+        {
+            item.ActivePromotion = CalculateBestPromotionPrice(
+                item.Price,
+                promotionDiscounts.GetValueOrDefault(item.Id));
+        }
+
         foreach (var item in items)
         {
             if (item.PrimaryImageUrl is not null)
@@ -310,6 +320,13 @@ public class DataAccessor(
 
         if (product is not null)
         {
+            var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+                new[] { product.Id });
+
+            product.ActivePromotion = CalculateBestPromotionPrice(
+                product.Price,
+                promotionDiscounts.GetValueOrDefault(product.Id));
+
             foreach (var image in product.Images)
             {
                 image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
@@ -376,6 +393,13 @@ public class DataAccessor(
 
         if (product is not null)
         {
+            var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+                new[] { product.Id });
+
+            product.ActivePromotion = CalculateBestPromotionPrice(
+                product.Price,
+                promotionDiscounts.GetValueOrDefault(product.Id));
+
             foreach (var image in product.Images)
             {
                 image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
@@ -505,7 +529,7 @@ public class DataAccessor(
                 "The product was created but could not be retrieved.");
     }
     public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(
-    Guid id)
+        Guid id)
     {
         var product = await _dataContext.Products
             .AsNoTracking()
@@ -560,6 +584,13 @@ public class DataAccessor(
 
         if (product is not null)
         {
+            var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+                new[] { product.Id });
+
+            product.ActivePromotion = CalculateBestPromotionPrice(
+                product.Price,
+                promotionDiscounts.GetValueOrDefault(product.Id));
+
             foreach (var image in product.Images)
             {
                 image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
@@ -1437,7 +1468,12 @@ public class DataAccessor(
                 Title = promotion.Title,
                 Slug = promotion.Slug,
                 BannerImageUrl = promotion.BannerImageUrl,
-                SortOrder = promotion.SortOrder
+                SortOrder = promotion.SortOrder,
+                DiscountType = promotion.DiscountType,
+                DiscountValue = promotion.DiscountValue,
+                ProductIds = promotion.PromotionProducts
+                    .Select(link => link.ProductId)
+                    .ToList(),
             })
             .ToListAsync();
 
@@ -1471,7 +1507,12 @@ public class DataAccessor(
                 BannerImageUrl = promotion.BannerImageUrl,
                 ImageUrl = promotion.ImageUrl,
                 StartDate = promotion.StartDate,
-                EndDate = promotion.EndDate
+                EndDate = promotion.EndDate,
+                DiscountType = promotion.DiscountType,
+                DiscountValue = promotion.DiscountValue,
+                ProductIds = promotion.PromotionProducts
+                    .Select(link => link.ProductId)
+                    .ToList(),
             })
             .FirstOrDefaultAsync();
 
@@ -1510,7 +1551,12 @@ public class DataAccessor(
                 BannerImageUrl = promotion.BannerImageUrl,
                 ImageUrl = promotion.ImageUrl,
                 StartDate = promotion.StartDate,
-                EndDate = promotion.EndDate
+                EndDate = promotion.EndDate,
+                DiscountType = promotion.DiscountType,
+                DiscountValue = promotion.DiscountValue,
+                ProductIds = promotion.PromotionProducts
+                    .Select(link => link.ProductId)
+                    .ToList(),
             })
             .FirstOrDefaultAsync();
 
@@ -1543,6 +1589,11 @@ public class DataAccessor(
                 EndDate = promotion.EndDate,
                 IsActive = promotion.IsActive,
                 SortOrder = promotion.SortOrder,
+                DiscountType = promotion.DiscountType,
+                DiscountValue = promotion.DiscountValue,
+                ProductIds = promotion.PromotionProducts
+                    .Select(link => link.ProductId)
+                    .ToList(),
                 CreatedAt = promotion.CreatedAt,
                 UpdatedAt = promotion.UpdatedAt
             })
@@ -1576,6 +1627,11 @@ public class DataAccessor(
                 EndDate = promotion.EndDate,
                 IsActive = promotion.IsActive,
                 SortOrder = promotion.SortOrder,
+                DiscountType = promotion.DiscountType,
+                DiscountValue = promotion.DiscountValue,
+                ProductIds = promotion.PromotionProducts
+                    .Select(link => link.ProductId)
+                    .ToList(),
                 CreatedAt = promotion.CreatedAt,
                 UpdatedAt = promotion.UpdatedAt
             })
@@ -1612,7 +1668,16 @@ public class DataAccessor(
     public async Task<PromotionAdminDto> CreatePromotionAsync(
         PromotionCreateRequest request)
     {
-        ValidatePromotionDates(request.StartDate, request.EndDate);
+        ValidatePromotionDates(
+            request.StartDate,
+            request.EndDate);
+
+        ValidatePromotionDiscount(
+            request.DiscountType,
+            request.DiscountValue);
+
+        var productIds = await ValidatePromotionProductIdsAsync(
+            request.ProductIds);
 
         var slug = request.Slug.Trim().ToLowerInvariant();
 
@@ -1622,7 +1687,7 @@ public class DataAccessor(
                 "A promotion with this slug already exists.");
         }
 
-        var promotion = new foxtrot_store_backend.Data.Entities.Promotion
+        var promotion = new Promotion
         {
             Title = request.Title.Trim(),
             Slug = slug,
@@ -1631,22 +1696,47 @@ public class DataAccessor(
             EndDate = request.EndDate,
             IsActive = request.IsActive,
             SortOrder = request.SortOrder,
+            DiscountType = request.DiscountType,
+            DiscountValue = request.DiscountValue,
             CreatedAt = DateTime.UtcNow
         };
 
         _dataContext.Promotions.Add(promotion);
+
+        foreach (var productId in productIds)
+        {
+            _dataContext.PromotionProducts.Add(
+                new PromotionProduct
+                {
+                    PromotionId = promotion.Id,
+                    ProductId = productId
+                });
+        }
+
         await _dataContext.SaveChangesAsync();
 
-        return (await GetPromotionForAdminByIdAsync(promotion.Id))!;
+        return await GetPromotionForAdminByIdAsync(promotion.Id)
+            ?? throw new InvalidOperationException(
+                "The promotion was created but could not be retrieved.");
     }
     public async Task<PromotionAdminDto?> UpdatePromotionAsync(
         Guid id,
         PromotionUpdateRequest request)
     {
-        ValidatePromotionDates(request.StartDate, request.EndDate);
+        ValidatePromotionDates(
+            request.StartDate,
+            request.EndDate);
+
+        ValidatePromotionDiscount(
+            request.DiscountType,
+            request.DiscountValue);
+
+        var isActive = request.IsActive
+            ?? throw new ArgumentException(
+                "IsActive is required.");
 
         var promotion = await _dataContext.Promotions
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .FirstOrDefaultAsync(promotion => promotion.Id == id);
 
         if (promotion is null)
         {
@@ -1661,16 +1751,46 @@ public class DataAccessor(
                 "A promotion with this slug already exists.");
         }
 
+        var productIds = await ValidatePromotionProductIdsAsync(
+            request.ProductIds);
+
         promotion.Title = request.Title.Trim();
         promotion.Slug = slug;
         promotion.Description = request.Description?.Trim();
         promotion.StartDate = request.StartDate;
         promotion.EndDate = request.EndDate;
-        promotion.IsActive = request.IsActive
-            ?? throw new ArgumentException(
-                "IsActive is required.");
+        promotion.IsActive = isActive;
         promotion.SortOrder = request.SortOrder;
+        promotion.DiscountType = request.DiscountType;
+        promotion.DiscountValue = request.DiscountValue;
         promotion.UpdatedAt = DateTime.UtcNow;
+
+        var existingLinks = await _dataContext.PromotionProducts
+            .Where(link => link.PromotionId == id)
+            .ToListAsync();
+
+        var requestedProductIds = productIds.ToHashSet();
+
+        var linksToRemove = existingLinks
+            .Where(link => !requestedProductIds.Contains(link.ProductId))
+            .ToList();
+
+        _dataContext.PromotionProducts.RemoveRange(linksToRemove);
+
+        var existingProductIds = existingLinks
+            .Select(link => link.ProductId)
+            .ToHashSet();
+
+        foreach (var productId in productIds.Where(
+            productId => !existingProductIds.Contains(productId)))
+        {
+            _dataContext.PromotionProducts.Add(
+                new PromotionProduct
+                {
+                    PromotionId = promotion.Id,
+                    ProductId = productId
+                });
+        }
 
         await _dataContext.SaveChangesAsync();
 
@@ -1754,6 +1874,8 @@ public class DataAccessor(
 
         return true;
     }
+
+
     private static void ValidatePromotionDates(
         DateTime? startDate,
         DateTime? endDate)
@@ -1766,8 +1888,206 @@ public class DataAccessor(
                 "EndDate cannot be earlier than StartDate.");
         }
     }
+    private static void ValidatePromotionDiscount(
+    PromotionDiscountType? discountType,
+    decimal? discountValue)
+    {
+        if (!discountType.HasValue && !discountValue.HasValue)
+        {
+            return;
+        }
 
+        if (!discountType.HasValue || !discountValue.HasValue)
+        {
+            throw new ArgumentException(
+                "DiscountType and DiscountValue must be provided together.");
+        }
 
+        if (!Enum.IsDefined(discountType.Value))
+        {
+            throw new ArgumentException(
+                "The specified discount type is invalid.");
+        }
+
+        if (decimal.Round(discountValue.Value, 2) != discountValue.Value)
+        {
+            throw new ArgumentException(
+                "DiscountValue cannot have more than two decimal places.");
+        }
+
+        switch (discountType.Value)
+        {
+            case PromotionDiscountType.Percentage:
+                if (discountValue.Value <= 0 ||
+                    discountValue.Value > 100)
+                {
+                    throw new ArgumentException(
+                        "Percentage discount must be greater than 0 and at most 100.");
+                }
+
+                break;
+
+            case PromotionDiscountType.FixedAmount:
+                if (discountValue.Value <= 0)
+                {
+                    throw new ArgumentException(
+                        "Fixed amount discount must be greater than 0.");
+                }
+
+                break;
+        }
+    }
+    private async Task<List<Guid>> ValidatePromotionProductIdsAsync(
+        IEnumerable<Guid>? requestedProductIds)
+    {
+        if (requestedProductIds is null)
+        {
+            throw new ArgumentException(
+                "ProductIds cannot be null.");
+        }
+
+        var productIds = requestedProductIds.ToList();
+
+        if (productIds.Distinct().Count() != productIds.Count)
+        {
+            throw new ArgumentException(
+                "Duplicate product IDs are not allowed.");
+        }
+
+        if (productIds.Count == 0)
+        {
+            return productIds;
+        }
+
+        var activeProductCount = await _dataContext.Products
+            .CountAsync(product =>
+                productIds.Contains(product.Id) &&
+                product.IsActive);
+
+        if (activeProductCount != productIds.Count)
+        {
+            throw new ArgumentException(
+                "One or more products do not exist or are inactive.");
+        }
+
+        return productIds;
+    }
+    private sealed record PromotionDiscountCandidate(
+        Guid ProductId,
+        Guid PromotionId,
+        string Title,
+        string Slug,
+        PromotionDiscountType DiscountType,
+        decimal DiscountValue,
+        int SortOrder);
+    private async Task<Dictionary<Guid, List<PromotionDiscountCandidate>>> GetActivePromotionDiscountsAsync(
+            IEnumerable<Guid> productIds)
+    {
+        var ids = productIds.Distinct().ToList();
+
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, List<PromotionDiscountCandidate>>();
+        }
+
+        var now = DateTime.UtcNow;
+
+        var promotions = await _dataContext.PromotionProducts
+            .AsNoTracking()
+            .Where(link =>
+                ids.Contains(link.ProductId) &&
+                link.Promotion.IsActive &&
+                link.Promotion.DiscountType.HasValue &&
+                link.Promotion.DiscountValue.HasValue &&
+                (!link.Promotion.StartDate.HasValue ||
+                 link.Promotion.StartDate.Value <= now) &&
+                (!link.Promotion.EndDate.HasValue ||
+                 link.Promotion.EndDate.Value >= now))
+            .Select(link => new
+            {
+                link.ProductId,
+                PromotionId = link.Promotion.Id,
+                Title = link.Promotion.Title,
+                Slug = link.Promotion.Slug,
+                DiscountType = link.Promotion.DiscountType,
+                DiscountValue = link.Promotion.DiscountValue,
+                SortOrder = link.Promotion.SortOrder
+            })
+            .ToListAsync();
+
+        return promotions
+            .Select(promotion => new PromotionDiscountCandidate(
+                promotion.ProductId,
+                promotion.PromotionId,
+                promotion.Title,
+                promotion.Slug,
+                promotion.DiscountType!.Value,
+                promotion.DiscountValue!.Value,
+                promotion.SortOrder))
+            .GroupBy(promotion => promotion.ProductId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToList());
+    }
+    private static ProductPromotionPriceDto? CalculateBestPromotionPrice(
+        decimal originalPrice,
+        IEnumerable<PromotionDiscountCandidate>? candidates)
+    {
+        if (candidates is null)
+        {
+            return null;
+        }
+
+        var options = candidates.Select(candidate =>
+        {
+            var calculatedDiscount = candidate.DiscountType switch
+            {
+                PromotionDiscountType.Percentage =>
+                    decimal.Round(
+                        originalPrice * candidate.DiscountValue / 100m,
+                        2,
+                        MidpointRounding.AwayFromZero),
+
+                PromotionDiscountType.FixedAmount =>
+                    candidate.DiscountValue,
+
+                _ => 0m
+            };
+
+            var discountAmount = Math.Min(
+                originalPrice,
+                calculatedDiscount);
+
+            var discountedPrice = Math.Max(
+                0m,
+                originalPrice - discountAmount);
+
+            return new
+            {
+                Candidate = candidate,
+                Result = new ProductPromotionPriceDto
+                {
+                    PromotionId = candidate.PromotionId,
+                    Title = candidate.Title,
+                    Slug = candidate.Slug,
+                    DiscountType = candidate.DiscountType.ToString(),
+                    DiscountValue = candidate.DiscountValue,
+                    OriginalPrice = originalPrice,
+                    DiscountAmount = discountAmount,
+                    DiscountedPrice = discountedPrice
+                }
+            };
+        });
+
+        return options
+            .OrderBy(option => option.Result.DiscountedPrice)
+            .ThenBy(option => option.Candidate.SortOrder)
+            .ThenBy(
+                option => option.Candidate.Title,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(option => option.Result)
+            .FirstOrDefault();
+    }
     private static string? BuildPromotionImageUrl(string? imageUrl)
     {
         if (string.IsNullOrWhiteSpace(imageUrl))
