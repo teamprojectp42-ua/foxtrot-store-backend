@@ -1118,7 +1118,6 @@ public class DataAccessor(
 
         return roots;
     }
-
     private static void SortCategoryTree(List<CategoryTreeDto> categories)
     {
         categories.Sort((first, second) =>
