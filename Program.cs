@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using foxtrot_store_backend.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +15,7 @@ builder.Services.AddDbContext<DataContext>(options =>
     ));
 
 builder.Services.AddScoped<DataAccessor>();
+builder.Services.AddScoped<IdentityInitializer>();
 builder.Services.AddControllersWithViews();
 
 // Реєстрація користувачів і ролей
@@ -87,6 +89,14 @@ builder.Services.AddAuthorization();
 builder.Services.AddLocalStorage(builder.Configuration);
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var initializer = scope.ServiceProvider
+        .GetRequiredService<IdentityInitializer>();
+
+    await initializer.InitializeAsync();
+}
 
 if (!app.Environment.IsDevelopment())
 {

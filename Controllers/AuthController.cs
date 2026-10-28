@@ -290,7 +290,8 @@ public class AuthController(
 
     private string? GetCurrentUserId()
     {
-        return User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        return User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
     }
 
     private string CreateAccessToken(
@@ -340,21 +341,18 @@ public class AuthController(
                 error.Code,
                 error.Description
             })
-            .ToList();
+            .ToArray();
 
-        var statusCode = errors.Any(error =>
-            error.Code is "DuplicateUserName" or "DuplicateEmail")
-                ? 409
-                : 400;
+        var hasConflict = result.Errors.Any(error =>
+            error.Code is "DuplicateUserName"
+                or "DuplicateEmail"
+                or "LastAdmin");
 
-        var status = statusCode == 409
-            ? RestStatus.Conflict
-            : RestStatus.BadRequest;
-
-        return StatusCode(statusCode, new RestResponse
+        if (hasConflict)
         {
-            Status = status,
-            Data = errors
-        });
+            return Conflict(new { errors });
+        }
+
+        return BadRequest(new { errors });
     }
 }

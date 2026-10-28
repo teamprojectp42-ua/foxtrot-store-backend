@@ -2373,6 +2373,25 @@ public class DataAccessor(
             });
         }
 
+        var isAdmin = await _userManager.IsInRoleAsync(
+            user,
+            AppRoles.Admin);
+
+        if (isAdmin)
+        {
+            var administrators = await _userManager.GetUsersInRoleAsync(
+                AppRoles.Admin);
+
+            if (administrators.Count <= 1)
+            {
+                return IdentityResult.Failed(new IdentityError
+                {
+                    Code = "LastAdmin",
+                    Description = "The last administrator cannot be deleted."
+                });
+            }
+        }
+
         return await _userManager.DeleteAsync(user);
     }
     private async Task<UserDto> MapUserAsync(IdentityUser user)

@@ -313,6 +313,7 @@ namespace foxtrot_store_backend.Migrations
                         .HasColumnType("longtext");
 
                     b.Property<decimal>("Price")
+                        .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Sku")
@@ -433,6 +434,14 @@ namespace foxtrot_store_backend.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("varchar(2000)");
 
+                    b.Property<string>("DiscountType")
+                        .HasMaxLength(20)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<decimal?>("DiscountValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<DateTime?>("EndDate")
                         .HasColumnType("datetime(6)");
 
@@ -468,6 +477,21 @@ namespace foxtrot_store_backend.Migrations
                         .IsUnique();
 
                     b.ToTable("Promotions");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.PromotionProduct", b =>
+                {
+                    b.Property<Guid>("PromotionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("PromotionId", "ProductId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("PromotionProducts");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -582,6 +606,25 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.PromotionProduct", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Product", "Product")
+                        .WithMany("PromotionProducts")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Promotion", "Promotion")
+                        .WithMany("PromotionProducts")
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+
+                    b.Navigation("Promotion");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Brand", b =>
                 {
                     b.Navigation("Products");
@@ -600,7 +643,14 @@ namespace foxtrot_store_backend.Migrations
 
                     b.Navigation("ProductCategories");
 
+                    b.Navigation("PromotionProducts");
+
                     b.Navigation("Specifications");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Promotion", b =>
+                {
+                    b.Navigation("PromotionProducts");
                 });
 #pragma warning restore 612, 618
         }
