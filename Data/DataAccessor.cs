@@ -1421,7 +1421,7 @@ public class DataAccessor(
     {
         var now = DateTime.UtcNow;
 
-        return await _dataContext.Promotions
+        var promotions = await _dataContext.Promotions
             .AsNoTracking()
             .Where(promotion =>
                 promotion.IsActive &&
@@ -1440,13 +1440,20 @@ public class DataAccessor(
                 SortOrder = promotion.SortOrder
             })
             .ToListAsync();
+
+        foreach (var promotion in promotions)
+        {
+            promotion.BannerImageUrl =
+                BuildPromotionImageUrl(promotion.BannerImageUrl);
+        }
+
+        return promotions;
     }
-    public async Task<PromotionDetailsDto?> GetPromotionByIdAsync(
-        Guid id)
+    public async Task<PromotionDetailsDto?> GetPromotionByIdAsync(Guid id)
     {
         var now = DateTime.UtcNow;
 
-        return await _dataContext.Promotions
+        var promotion = await _dataContext.Promotions
             .AsNoTracking()
             .Where(promotion =>
                 promotion.Id == id &&
@@ -1467,6 +1474,17 @@ public class DataAccessor(
                 EndDate = promotion.EndDate
             })
             .FirstOrDefaultAsync();
+
+        if (promotion is not null)
+        {
+            promotion.BannerImageUrl =
+                BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.ImageUrl =
+                BuildPromotionImageUrl(promotion.ImageUrl);
+        }
+
+        return promotion;
     }
     public async Task<PromotionDetailsDto?> GetPromotionBySlugAsync(
         string slug)
@@ -1474,7 +1492,7 @@ public class DataAccessor(
         var now = DateTime.UtcNow;
         var normalizedSlug = slug.Trim().ToLowerInvariant();
 
-        return await _dataContext.Promotions
+        var promotion = await _dataContext.Promotions
             .AsNoTracking()
             .Where(promotion =>
                 promotion.Slug == normalizedSlug &&
@@ -1495,52 +1513,84 @@ public class DataAccessor(
                 EndDate = promotion.EndDate
             })
             .FirstOrDefaultAsync();
+
+        if (promotion is not null)
+        {
+            promotion.BannerImageUrl =
+                BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.ImageUrl =
+                BuildPromotionImageUrl(promotion.ImageUrl);
+        }
+
+        return promotion;
     }
     public async Task<List<PromotionAdminDto>> GetPromotionsForAdminAsync()
     {
-        return await _dataContext.Promotions
+        var promotions = await _dataContext.Promotions
             .AsNoTracking()
-            .OrderBy(p => p.SortOrder)
-            .ThenBy(p => p.Title)
-            .Select(p => new PromotionAdminDto
+            .OrderBy(promotion => promotion.SortOrder)
+            .ThenBy(promotion => promotion.Title)
+            .Select(promotion => new PromotionAdminDto
             {
-                Id = p.Id,
-                Title = p.Title,
-                Slug = p.Slug,
-                Description = p.Description,
-                BannerImageUrl = p.BannerImageUrl,
-                ImageUrl = p.ImageUrl,
-                StartDate = p.StartDate,
-                EndDate = p.EndDate,
-                IsActive = p.IsActive,
-                SortOrder = p.SortOrder,
-                CreatedAt = p.CreatedAt,
-                UpdatedAt = p.UpdatedAt
+                Id = promotion.Id,
+                Title = promotion.Title,
+                Slug = promotion.Slug,
+                Description = promotion.Description,
+                BannerImageUrl = promotion.BannerImageUrl,
+                ImageUrl = promotion.ImageUrl,
+                StartDate = promotion.StartDate,
+                EndDate = promotion.EndDate,
+                IsActive = promotion.IsActive,
+                SortOrder = promotion.SortOrder,
+                CreatedAt = promotion.CreatedAt,
+                UpdatedAt = promotion.UpdatedAt
             })
             .ToListAsync();
+
+        foreach (var promotion in promotions)
+        {
+            promotion.BannerImageUrl =
+                BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.ImageUrl =
+                BuildPromotionImageUrl(promotion.ImageUrl);
+        }
+
+        return promotions;
     }
-    public async Task<PromotionAdminDto?> GetPromotionForAdminByIdAsync(
-        Guid id)
+    public async Task<PromotionAdminDto?> GetPromotionForAdminByIdAsync(Guid id)
     {
-        return await _dataContext.Promotions
+        var promotion = await _dataContext.Promotions
             .AsNoTracking()
-            .Where(p => p.Id == id)
-            .Select(p => new PromotionAdminDto
+            .Where(promotion => promotion.Id == id)
+            .Select(promotion => new PromotionAdminDto
             {
-                Id = p.Id,
-                Title = p.Title,
-                Slug = p.Slug,
-                Description = p.Description,
-                BannerImageUrl = p.BannerImageUrl,
-                ImageUrl = p.ImageUrl,
-                StartDate = p.StartDate,
-                EndDate = p.EndDate,
-                IsActive = p.IsActive,
-                SortOrder = p.SortOrder,
-                CreatedAt = p.CreatedAt,
-                UpdatedAt = p.UpdatedAt
+                Id = promotion.Id,
+                Title = promotion.Title,
+                Slug = promotion.Slug,
+                Description = promotion.Description,
+                BannerImageUrl = promotion.BannerImageUrl,
+                ImageUrl = promotion.ImageUrl,
+                StartDate = promotion.StartDate,
+                EndDate = promotion.EndDate,
+                IsActive = promotion.IsActive,
+                SortOrder = promotion.SortOrder,
+                CreatedAt = promotion.CreatedAt,
+                UpdatedAt = promotion.UpdatedAt
             })
             .FirstOrDefaultAsync();
+
+        if (promotion is not null)
+        {
+            promotion.BannerImageUrl =
+                BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.ImageUrl =
+                BuildPromotionImageUrl(promotion.ImageUrl);
+        }
+
+        return promotion;
     }
     public async Task<bool> PromotionSlugExistsAsync(
         string slug,
@@ -1577,8 +1627,6 @@ public class DataAccessor(
             Title = request.Title.Trim(),
             Slug = slug,
             Description = request.Description?.Trim(),
-            BannerImageUrl = request.BannerImageUrl?.Trim(),
-            ImageUrl = request.ImageUrl?.Trim(),
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             IsActive = request.IsActive,
@@ -1616,11 +1664,11 @@ public class DataAccessor(
         promotion.Title = request.Title.Trim();
         promotion.Slug = slug;
         promotion.Description = request.Description?.Trim();
-        promotion.BannerImageUrl = request.BannerImageUrl?.Trim();
-        promotion.ImageUrl = request.ImageUrl?.Trim();
         promotion.StartDate = request.StartDate;
         promotion.EndDate = request.EndDate;
-        promotion.IsActive = request.IsActive;
+        promotion.IsActive = request.IsActive
+            ?? throw new ArgumentException(
+                "IsActive is required.");
         promotion.SortOrder = request.SortOrder;
         promotion.UpdatedAt = DateTime.UtcNow;
 
@@ -1628,10 +1676,53 @@ public class DataAccessor(
 
         return await GetPromotionForAdminByIdAsync(id);
     }
+    public async Task<(bool Updated, string? PreviousImageKey)> SetPromotionImageAsync(
+        Guid promotionId,
+        string imageKey,
+        bool isBanner,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey))
+        {
+            throw new ArgumentException(
+                "Image key cannot be empty.",
+                nameof(imageKey));
+        }
+
+        var promotion = await _dataContext.Promotions
+            .FirstOrDefaultAsync(
+                promotion => promotion.Id == promotionId,
+                cancellationToken);
+
+        if (promotion is null)
+        {
+            return (false, null);
+        }
+
+        var previousImageKey = isBanner
+            ? promotion.BannerImageUrl
+            : promotion.ImageUrl;
+
+        if (isBanner)
+        {
+            promotion.BannerImageUrl = imageKey.Trim();
+        }
+        else
+        {
+            promotion.ImageUrl = imageKey.Trim();
+        }
+
+        promotion.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        return (true, previousImageKey);
+    }
     public async Task<bool> DeletePromotionAsync(Guid id)
     {
         var promotion = await _dataContext.Promotions
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .FirstOrDefaultAsync(p =>
+                p.Id == id && p.IsActive);
 
         if (promotion is null)
         {
@@ -1639,6 +1730,24 @@ public class DataAccessor(
         }
 
         promotion.IsActive = false;
+        promotion.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+    public async Task<bool> RestorePromotionAsync(Guid id)
+    {
+        var promotion = await _dataContext.Promotions
+            .FirstOrDefaultAsync(p =>
+                p.Id == id && !p.IsActive);
+
+        if (promotion is null)
+        {
+            return false;
+        }
+
+        promotion.IsActive = true;
         promotion.UpdatedAt = DateTime.UtcNow;
 
         await _dataContext.SaveChangesAsync();
@@ -1656,6 +1765,45 @@ public class DataAccessor(
             throw new ArgumentException(
                 "EndDate cannot be earlier than StartDate.");
         }
+    }
+
+
+    private static string? BuildPromotionImageUrl(string? imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            return null;
+        }
+
+        var value = imageUrl.Trim();
+
+        if (IsLocalStoragePromotionImageKey(value))
+        {
+            return $"/api/promotions/images/{value}";
+        }
+
+        return value;
+    }
+    private static bool IsLocalStoragePromotionImageKey(string imageKey)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey) ||
+            Path.IsPathRooted(imageKey) ||
+            imageKey.Contains('/') ||
+            imageKey.Contains('\\'))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(imageKey).ToLowerInvariant();
+
+        if (extension is not (".jpg" or ".png" or ".webp"))
+        {
+            return false;
+        }
+
+        var fileId = Path.GetFileNameWithoutExtension(imageKey);
+
+        return Guid.TryParseExact(fileId, "N", out _);
     }
 
 

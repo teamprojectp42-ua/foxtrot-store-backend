@@ -18,17 +18,12 @@ public class PromotionUpdateRequest
     [MaxLength(2000)]
     public string? Description { get; set; }
 
-    [MaxLength(2048)]
-    public string? BannerImageUrl { get; set; }
-
-    [MaxLength(2048)]
-    public string? ImageUrl { get; set; }
-
     public DateTime? StartDate { get; set; }
 
     public DateTime? EndDate { get; set; }
 
-    public bool IsActive { get; set; }
+    [Required]
+    public bool? IsActive { get; set; }
 
     public int SortOrder { get; set; }
 }

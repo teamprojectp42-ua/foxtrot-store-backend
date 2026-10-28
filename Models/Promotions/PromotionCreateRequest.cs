@@ -19,12 +19,6 @@ public class PromotionCreateRequest
     [MaxLength(2000)]
     public string? Description { get; set; }
 
-    [MaxLength(2048)]
-    public string? BannerImageUrl { get; set; }
-
-    [MaxLength(2048)]
-    public string? ImageUrl { get; set; }
-
     public DateTime? StartDate { get; set; }
 
     public DateTime? EndDate { get; set; }
