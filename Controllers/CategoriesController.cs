@@ -155,9 +155,120 @@ public class CategoriesController(
 
     [HttpGet("{id:guid}/products")]
     public async Task<IActionResult> GetCategoryProducts(
-        Guid id,
-        [FromQuery] ProductCatalogQuery query)
+    Guid id,
+    [FromQuery] ProductCatalogQuery query)
     {
+        if (query.Page < 1)
+        {
+            ModelState.AddModelError(
+                nameof(query.Page),
+                "Page must be greater than zero.");
+        }
+
+        if (query.PageSize < 1 || query.PageSize > 100)
+        {
+            ModelState.AddModelError(
+                nameof(query.PageSize),
+                "PageSize must be between 1 and 100.");
+        }
+
+        if (query.Page >= 1 &&
+            query.PageSize >= 1 &&
+            query.PageSize <= 100)
+        {
+            var requestedOffset =
+                ((long)query.Page - 1) * query.PageSize;
+
+            if (requestedOffset > int.MaxValue)
+            {
+                ModelState.AddModelError(
+                    nameof(query.Page),
+                    "The requested page is too large.");
+            }
+        }
+
+        if (query.MinPrice < 0)
+        {
+            ModelState.AddModelError(
+                nameof(query.MinPrice),
+                "MinPrice cannot be negative.");
+        }
+
+        if (query.MaxPrice < 0)
+        {
+            ModelState.AddModelError(
+                nameof(query.MaxPrice),
+                "MaxPrice cannot be negative.");
+        }
+
+        if (query.MinPrice.HasValue &&
+            query.MaxPrice.HasValue &&
+            query.MinPrice > query.MaxPrice)
+        {
+            ModelState.AddModelError(
+                nameof(query.MaxPrice),
+                "MaxPrice must be greater than or equal to MinPrice.");
+        }
+
+        if (query.Search?.Length > 100)
+        {
+            ModelState.AddModelError(
+                nameof(query.Search),
+                "Search cannot exceed 100 characters.");
+        }
+
+        var allowedSortFields = new[]
+        {
+        "name",
+        "price",
+        "createdat"
+    };
+
+        if (string.IsNullOrWhiteSpace(query.SortBy) ||
+            !allowedSortFields.Contains(
+                query.SortBy,
+                StringComparer.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError(
+                nameof(query.SortBy),
+                "SortBy must be name, price or createdAt.");
+        }
+
+        if (string.IsNullOrWhiteSpace(query.SortDirection) ||
+            !new[] { "asc", "desc" }.Contains(
+                query.SortDirection,
+                StringComparer.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError(
+                nameof(query.SortDirection),
+                "SortDirection must be asc or desc.");
+        }
+
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "CategoryProducts",
+                    DataType = "application/json",
+                    Manipulations = ["GET"],
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}/products"
+                }
+                },
+                Data = ModelState
+                    .Where(entry => entry.Value?.Errors.Count > 0)
+                    .ToDictionary(
+                        entry => entry.Key,
+                        entry => entry.Value!.Errors
+                            .Select(error => error.ErrorMessage)
+                            .ToArray())
+            });
+        }
+
         if (!await _dataAccessor.CategoryExistsAsync(id))
         {
             return NotFound(new RestResponse
@@ -166,12 +277,19 @@ public class CategoriesController(
                 Meta = new RestMeta
                 {
                     ApiName = "CategoryProducts",
-                    Links = { ["self"] = $"/api/categories/{id}/products" }
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}/products"
+                }
                 },
-                Data = new { message = "Category not found." }
+                Data = new
+                {
+                    message = "Category not found."
+                }
             });
         }
 
+        // Always use the category ID from the route.
         query.CategoryId = id;
 
         var result = await _dataAccessor.GetProductsAsync(query);
@@ -185,7 +303,10 @@ public class CategoriesController(
                 DataType = "json/array",
                 CacheTime = 0,
                 Manipulations = ["GET"],
-                Links = { ["self"] = $"/api/categories/{id}/products" },
+                Links =
+            {
+                ["self"] = $"/api/categories/{id}/products"
+            },
                 Pagination = new RestMetaPagination
                 {
                     Page = result.Page,
