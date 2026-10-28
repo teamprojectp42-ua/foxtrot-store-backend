@@ -15,4 +15,5 @@ public class CategoryDto
     public Guid? ParentCategoryId { get; set; }
 
     public int SortOrder { get; set; }
+
 }

@@ -1,5 +1,4 @@
-﻿
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace foxtrot_store_backend.Models.Categories;
 
@@ -16,8 +15,6 @@ public class CategoryCreateRequest
 
     [StringLength(1000)]
     public string? Description { get; set; }
-
-    public string? ImageUrl { get; set; }
 
     public Guid? ParentCategoryId { get; set; }
 

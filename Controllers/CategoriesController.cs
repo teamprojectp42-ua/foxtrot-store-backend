@@ -4,14 +4,21 @@ using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using foxtrot_store_backend.Services.LocalStorage;
 
 namespace foxtrot_store_backend.Controllers;
 
 [ApiController]
 [Route("api/categories")]
-public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
+public class CategoriesController(
+    DataAccessor dataAccessor,
+    ILocalStorageService localStorage,
+    ILogger<CategoriesController> logger) : ControllerBase
 {
     private readonly DataAccessor _dataAccessor = dataAccessor;
+    private readonly ILocalStorageService _localStorage = localStorage;
+    private readonly ILogger<CategoriesController> _logger = logger;
+
 
     [HttpGet]
     public async Task<IActionResult> GetCategories()
@@ -298,24 +305,377 @@ public class CategoriesController(DataAccessor dataAccessor) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteCategory(Guid id)
     {
-        var deleted = await _dataAccessor.DeleteCategoryAsync(id);
+        try
+        {
+            var deleted = await _dataAccessor.DeleteCategoryAsync(id);
 
-        if (!deleted)
+            if (!deleted)
+            {
+                return NotFound(new RestResponse
+                {
+                    Status = RestStatus.NotFound,
+                    Meta = new RestMeta
+                    {
+                        ApiName = "Category",
+                        Links =
+                    {
+                        ["self"] = $"/api/categories/{id}"
+                    }
+                    },
+                    Data = new
+                    {
+                        message = "Active category not found."
+                    }
+                });
+            }
+
+            return Ok(new RestResponse
+            {
+                Status = RestStatus.Ok,
+                Meta = new RestMeta
+                {
+                    ApiName = "Category",
+                    Manipulations = ["DELETE"],
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}",
+                    ["restore"] = $"/api/categories/{id}/restore"
+                }
+                },
+                Data = new
+                {
+                    message = "Category deactivated successfully."
+                }
+            });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta
+                {
+                    ApiName = "Category",
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}"
+                }
+                },
+                Data = new
+                {
+                    message = exception.Message
+                }
+            });
+        }
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{id:guid}/restore")]
+    public async Task<IActionResult> RestoreCategory(Guid id)
+    {
+        try
+        {
+            var restored = await _dataAccessor.RestoreCategoryAsync(id);
+
+            if (!restored)
+            {
+                return NotFound(new RestResponse
+                {
+                    Status = RestStatus.NotFound,
+                    Meta = new RestMeta
+                    {
+                        ApiName = "Category",
+                        Links =
+                    {
+                        ["self"] = $"/api/categories/{id}/restore"
+                    }
+                    },
+                    Data = new
+                    {
+                        message =
+                            "Inactive category not found or already active."
+                    }
+                });
+            }
+
+            return Ok(new RestResponse
+            {
+                Status = RestStatus.Ok,
+                Meta = new RestMeta
+                {
+                    ApiName = "Category",
+                    Manipulations = ["POST"],
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}/restore",
+                    ["parent"] = "/api/categories"
+                }
+                },
+                Data = new
+                {
+                    message = "Category restored successfully."
+                }
+            });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new RestResponse
+            {
+                Status = RestStatus.Conflict,
+                Meta = new RestMeta
+                {
+                    ApiName = "Category",
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}/restore"
+                }
+                },
+                Data = new
+                {
+                    message = exception.Message
+                }
+            });
+        }
+    }
+
+    [HttpGet("images/{imageKey}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetCategoryImage(
+    string imageKey,
+    CancellationToken cancellationToken)
+    {
+        var contentType = Path.GetExtension(imageKey).ToLowerInvariant() switch
+        {
+            ".jpg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            _ => null
+        };
+
+        if (contentType is null)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "CategoryImage"
+                },
+                Data = new
+                {
+                    message = "Unsupported image format."
+                }
+            });
+        }
+
+        Stream? imageStream;
+
+        try
+        {
+            imageStream = await _localStorage.GetAsync(
+                imageKey,
+                cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "CategoryImage"
+                },
+                Data = new
+                {
+                    message = "Invalid image key."
+                }
+            });
+        }
+
+        if (imageStream is null)
         {
             return NotFound(new RestResponse
             {
                 Status = RestStatus.NotFound,
-                Meta = new RestMeta { ApiName = "Category" },
-                Data = new { message = "Category not found." }
+                Meta = new RestMeta
+                {
+                    ApiName = "CategoryImage"
+                },
+                Data = new
+                {
+                    message = "Image not found."
+                }
             });
+        }
+
+        return File(imageStream, contentType);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{id:guid}/image")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadCategoryImage(
+    Guid id,
+    [FromForm] IFormFile? file,
+    CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "CategoryImage"
+                },
+                Data = new
+                {
+                    message = "An image file is required."
+                }
+            });
+        }
+
+        string imageKey;
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+
+            imageKey = await _localStorage.SaveAsync(
+                stream,
+                file.ContentType,
+                cancellationToken);
+        }
+        catch (InvalidDataException exception)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta
+                {
+                    ApiName = "CategoryImage"
+                },
+                Data = new
+                {
+                    message = exception.Message
+                }
+            });
+        }
+
+        (bool Updated, string? PreviousImageKey) result;
+
+        try
+        {
+            result = await _dataAccessor.SetCategoryImageAsync(
+                id,
+                imageKey,
+                cancellationToken);
+
+            if (!result.Updated)
+            {
+                await TryDeleteImageAsync(imageKey);
+
+                return NotFound(new RestResponse
+                {
+                    Status = RestStatus.NotFound,
+                    Meta = new RestMeta
+                    {
+                        ApiName = "CategoryImage",
+                        Links =
+                    {
+                        ["self"] = $"/api/categories/{id}/image"
+                    }
+                    },
+                    Data = new
+                    {
+                        message = "Active category was not found."
+                    }
+                });
+            }
+        }
+        catch
+        {
+            // Remove the newly uploaded file if database persistence fails.
+            await TryDeleteImageAsync(imageKey);
+            throw;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.PreviousImageKey) &&
+            !string.Equals(
+                result.PreviousImageKey,
+                imageKey,
+                StringComparison.Ordinal) &&
+            IsLocalStorageImageKey(result.PreviousImageKey))
+        {
+            // The database now references the new image.
+            // Failure to remove the old image must not invalidate the update.
+            await TryDeleteImageAsync(result.PreviousImageKey);
         }
 
         return Ok(new RestResponse
         {
             Status = RestStatus.Ok,
-            Meta = new RestMeta { ApiName = "Category" },
-            Data = new { message = "Category deleted successfully." }
+            Meta = new RestMeta
+            {
+                ApiName = "CategoryImage",
+                DataType = "application/json",
+                Manipulations = ["POST"],
+                Links =
+            {
+                ["parent"] = "/api/categories",
+                ["image"] = $"/api/categories/images/{imageKey}"
+            }
+            },
+            Data = new
+            {
+                categoryId = id,
+                imageKey,
+                imageUrl = $"/api/categories/images/{imageKey}"
+            }
         });
     }
 
+
+
+    private static bool IsLocalStorageImageKey(string imageKey)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey) ||
+            Path.IsPathRooted(imageKey) ||
+            imageKey.Contains('/') ||
+            imageKey.Contains('\\'))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(imageKey).ToLowerInvariant();
+
+        if (extension is not (".jpg" or ".png" or ".webp"))
+        {
+            return false;
+        }
+
+        var fileId = Path.GetFileNameWithoutExtension(imageKey);
+
+        return Guid.TryParseExact(fileId, "N", out _);
+    }
+
+    private async Task TryDeleteImageAsync(string imageKey)
+    {
+        try
+        {
+            await _localStorage.DeleteAsync(
+                imageKey,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            // Cleanup failure must not hide the original result or exception.
+            _logger.LogWarning(
+                exception,
+                "Failed to remove category image {ImageKey}.",
+                imageKey);
+        }
+    }
 }
+
+

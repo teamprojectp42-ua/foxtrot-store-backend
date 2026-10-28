@@ -27,6 +27,8 @@ public class DataAccessor(
             .SingleAsync();
     }
 
+
+    // Products
     public async Task<bool> AddProductImageAsync(
     Guid productId,
     string imageKey,
@@ -772,6 +774,372 @@ public class DataAccessor(
         return true;
     }
 
+    // Categories
+    public async Task<List<CategoryDto>> GetCategoriesAsync()
+    {
+        var categories = await _dataContext.Categories
+            .AsNoTracking()
+            .Where(category => category.IsActive)
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(category => category.Name)
+            .Select(category => new CategoryDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
+                ImageUrl = category.ImageUrl,
+                ParentCategoryId = category.ParentCategoryId,
+                SortOrder = category.SortOrder
+            })
+            .ToListAsync();
+
+        foreach (var category in categories)
+        {
+            category.ImageUrl = BuildCategoryImageUrl(category.ImageUrl);
+        }
+
+        return categories;
+    }
+    public async Task<CategoryDto?> GetCategoryByIdAsync(Guid id)
+    {
+        var category = await _dataContext.Categories
+            .AsNoTracking()
+            .Where(category =>
+                category.Id == id &&
+                category.IsActive)
+            .Select(category => new CategoryDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
+                ImageUrl = category.ImageUrl,
+                ParentCategoryId = category.ParentCategoryId,
+                SortOrder = category.SortOrder
+            })
+            .FirstOrDefaultAsync();
+
+        if (category is not null)
+        {
+            category.ImageUrl = BuildCategoryImageUrl(category.ImageUrl);
+        }
+
+        return category;
+    }
+    public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
+    {
+        var category = await _dataContext.Categories
+            .AsNoTracking()
+            .Where(category =>
+                category.Slug == slug &&
+                category.IsActive)
+            .Select(category => new CategoryDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                Description = category.Description,
+                ImageUrl = category.ImageUrl,
+                ParentCategoryId = category.ParentCategoryId,
+                SortOrder = category.SortOrder
+            })
+            .FirstOrDefaultAsync();
+
+        if (category is not null)
+        {
+            category.ImageUrl = BuildCategoryImageUrl(category.ImageUrl);
+        }
+
+        return category;
+    }
+    public async Task<bool> CategoryExistsAsync(Guid id)
+    {
+        return await _dataContext.Categories
+            .AsNoTracking()
+            .AnyAsync(category => category.Id == id && category.IsActive);
+    }
+    public async Task<CategoryDto> CreateCategoryAsync(
+        CategoryCreateRequest request)
+    {
+        var id = Guid.NewGuid();
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Categories.AnyAsync(
+            c => c.Slug == slug))
+        {
+            throw new InvalidOperationException(
+                "A category with this slug already exists.");
+        }
+
+        await EnsureValidParentCategoryAsync(
+            id,
+            request.ParentCategoryId);
+
+        var category = new Category
+        {
+            Id = id,
+            Name = request.Name.Trim(),
+            Slug = slug,
+            Description = request.Description?.Trim(),
+            ParentCategoryId = request.ParentCategoryId,
+            SortOrder = request.SortOrder,
+            IsActive = true
+        };
+
+        _dataContext.Categories.Add(category);
+        await _dataContext.SaveChangesAsync();
+
+        return new CategoryDto
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Slug = category.Slug,
+            Description = category.Description,
+            ImageUrl = BuildCategoryImageUrl(category.ImageUrl),
+            ParentCategoryId = category.ParentCategoryId,
+            SortOrder = category.SortOrder
+        };
+    }
+    public async Task<CategoryDto?> UpdateCategoryAsync(
+        Guid id,
+        CategoryUpdateRequest request)
+    {
+        var category = await _dataContext.Categories
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (category is null)
+        {
+            return null;
+        }
+
+        var slug = request.Slug.Trim().ToLowerInvariant();
+
+        if (await _dataContext.Categories.AnyAsync(
+            c => c.Slug == slug && c.Id != id))
+        {
+            throw new InvalidOperationException(
+                "A category with this slug already exists.");
+        }
+
+        await EnsureValidParentCategoryAsync(
+            id,
+            request.ParentCategoryId);
+
+        category.Name = request.Name.Trim();
+        category.Slug = slug;
+        category.Description = request.Description?.Trim();
+        category.ParentCategoryId = request.ParentCategoryId;
+        category.SortOrder = request.SortOrder;
+
+        await _dataContext.SaveChangesAsync();
+
+        return new CategoryDto
+        {
+            Id = category.Id,
+            Name = category.Name,
+            Slug = category.Slug,
+            Description = category.Description,
+            ImageUrl = BuildCategoryImageUrl(category.ImageUrl),
+            ParentCategoryId = category.ParentCategoryId,
+            SortOrder = category.SortOrder
+        };
+    }
+    public async Task<(bool Updated, string? PreviousImageKey)> SetCategoryImageAsync(
+        Guid categoryId,
+        string imageKey,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey))
+        {
+            throw new ArgumentException(
+                "Image key cannot be empty.",
+                nameof(imageKey));
+        }
+
+        var category = await _dataContext.Categories
+            .FirstOrDefaultAsync(
+                category =>
+                    category.Id == categoryId &&
+                    category.IsActive,
+                cancellationToken);
+
+        if (category is null)
+        {
+            return (false, null);
+        }
+
+        var previousImageKey = category.ImageUrl;
+
+        category.ImageUrl = imageKey.Trim();
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        return (true, previousImageKey);
+    }
+    public async Task<bool> DeleteCategoryAsync(Guid id)
+    {
+        var category = await _dataContext.Categories
+            .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
+
+        if (category is null)
+        {
+            return false;
+        }
+
+        var hasActiveChildren = await _dataContext.Categories
+            .AnyAsync(child =>
+                child.ParentCategoryId == id &&
+                child.IsActive);
+
+        if (hasActiveChildren)
+        {
+            throw new InvalidOperationException(
+                "Active child categories must be deactivated first.");
+        }
+
+        category.IsActive = false;
+
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+    public async Task<bool> RestoreCategoryAsync(Guid id)
+    {
+        var category = await _dataContext.Categories
+            .FirstOrDefaultAsync(c => c.Id == id && !c.IsActive);
+
+        if (category is null)
+        {
+            return false;
+        }
+
+        if (category.ParentCategoryId.HasValue)
+        {
+            var parentIsActive = await _dataContext.Categories
+                .AnyAsync(parent =>
+                    parent.Id == category.ParentCategoryId.Value &&
+                    parent.IsActive);
+
+            if (!parentIsActive)
+            {
+                throw new InvalidOperationException(
+                    "The parent category must be active before restoring this category.");
+            }
+        }
+
+        category.IsActive = true;
+
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+    private async Task EnsureValidParentCategoryAsync(
+        Guid categoryId,
+        Guid? parentCategoryId)
+    {
+        if (!parentCategoryId.HasValue)
+        {
+            return;
+        }
+
+        var parents = await _dataContext.Categories
+            .AsNoTracking()
+            .Where(c => c.IsActive)
+            .Select(c => new
+            {
+                c.Id,
+                c.ParentCategoryId
+            })
+            .ToDictionaryAsync(c => c.Id, c => c.ParentCategoryId);
+
+        if (!parents.ContainsKey(parentCategoryId.Value))
+        {
+            throw new ArgumentException(
+                "The parent category does not exist or is inactive.");
+        }
+
+        var visited = new HashSet<Guid>();
+        Guid? currentId = parentCategoryId;
+
+        while (currentId.HasValue)
+        {
+            if (currentId.Value == categoryId)
+            {
+                throw new ArgumentException(
+                    "A category cannot be its own ancestor.");
+            }
+
+            if (!visited.Add(currentId.Value))
+            {
+                throw new ArgumentException(
+                    "The category hierarchy contains a cycle.");
+            }
+
+            if (!parents.TryGetValue(currentId.Value, out currentId))
+            {
+                break;
+            }
+        }
+    }
+    public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
+    {
+        var categories = await GetCategoriesAsync();
+
+        var nodes = categories.ToDictionary(
+            category => category.Id,
+            category => new CategoryTreeDto
+            {
+                Id = category.Id,
+                Name = category.Name,
+                Slug = category.Slug,
+                SortOrder = category.SortOrder,
+                ImageUrl = category.ImageUrl,
+            });
+
+        var roots = new List<CategoryTreeDto>();
+
+        foreach (var category in categories)
+        {
+            var node = nodes[category.Id];
+
+            if (category.ParentCategoryId.HasValue &&
+                nodes.TryGetValue(category.ParentCategoryId.Value, out var parent))
+            {
+                parent.Children.Add(node);
+            }
+            else
+            {
+                roots.Add(node);
+            }
+        }
+
+        SortCategoryTree(roots);
+
+        return roots;
+    }
+
+    private static void SortCategoryTree(List<CategoryTreeDto> categories)
+    {
+        categories.Sort((first, second) =>
+        {
+            var orderComparison = first.SortOrder.CompareTo(second.SortOrder);
+
+            return orderComparison != 0
+                ? orderComparison
+                : string.Compare(
+                    first.Name,
+                    second.Name,
+                    StringComparison.OrdinalIgnoreCase);
+        });
+
+        foreach (var category in categories)
+        {
+            SortCategoryTree(category.Children);
+        }
+    }
+
+    // Brands
     public async Task<List<BrandDto>> GetBrandsAsync()
     {
         return await _dataContext.Brands
@@ -824,123 +1192,6 @@ public class DataAccessor(
             .AsNoTracking()
             .AnyAsync(brand => brand.Id == id && brand.IsActive);
     }
-    public async Task<List<CategoryDto>> GetCategoriesAsync()
-    {
-        return await _dataContext.Categories
-            .AsNoTracking()
-            .Where(category => category.IsActive)
-            .OrderBy(category => category.SortOrder)
-            .ThenBy(category => category.Name)
-            .Select(category => new CategoryDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                Description = category.Description,
-                ImageUrl = category.ImageUrl,
-                ParentCategoryId = category.ParentCategoryId,
-                SortOrder = category.SortOrder
-            })
-            .ToListAsync();
-    }
-    public async Task<CategoryDto?> GetCategoryByIdAsync(Guid id)
-    {
-        return await _dataContext.Categories
-            .AsNoTracking()
-            .Where(category => category.Id == id && category.IsActive)
-            .Select(category => new CategoryDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                Description = category.Description,
-                ImageUrl = category.ImageUrl,
-                ParentCategoryId = category.ParentCategoryId,
-                SortOrder = category.SortOrder
-            })
-            .FirstOrDefaultAsync();
-    }
-    public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
-    {
-        return await _dataContext.Categories
-            .AsNoTracking()
-            .Where(category => category.Slug == slug && category.IsActive)
-            .Select(category => new CategoryDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                Description = category.Description,
-                ImageUrl = category.ImageUrl,
-                ParentCategoryId = category.ParentCategoryId,
-                SortOrder = category.SortOrder
-            })
-            .FirstOrDefaultAsync();
-    }
-    public async Task<bool> CategoryExistsAsync(Guid id)
-    {
-        return await _dataContext.Categories
-            .AsNoTracking()
-            .AnyAsync(category => category.Id == id && category.IsActive);
-    }
-    public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
-    {
-        var categories = await GetCategoriesAsync();
-
-        var nodes = categories.ToDictionary(
-            category => category.Id,
-            category => new CategoryTreeDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                SortOrder = category.SortOrder,
-                ImageUrl = category.ImageUrl,
-            });
-
-        var roots = new List<CategoryTreeDto>();
-
-        foreach (var category in categories)
-        {
-            var node = nodes[category.Id];
-
-            if (category.ParentCategoryId.HasValue &&
-                nodes.TryGetValue(category.ParentCategoryId.Value, out var parent))
-            {
-                parent.Children.Add(node);
-            }
-            else
-            {
-                roots.Add(node);
-            }
-        }
-
-        SortCategoryTree(roots);
-
-        return roots;
-    }
-    private static void SortCategoryTree(List<CategoryTreeDto> categories)
-    {
-        categories.Sort((first, second) =>
-        {
-            var orderComparison = first.SortOrder.CompareTo(second.SortOrder);
-
-            return orderComparison != 0
-                ? orderComparison
-                : string.Compare(
-                    first.Name,
-                    second.Name,
-                    StringComparison.OrdinalIgnoreCase);
-        });
-
-        foreach (var category in categories)
-        {
-            SortCategoryTree(category.Children);
-        }
-    }
-
-
-    // Brands
     public async Task<BrandDto> CreateBrandAsync(
         BrandCreateRequest request)
     {
@@ -1027,160 +1278,6 @@ public class DataAccessor(
         await _dataContext.SaveChangesAsync();
 
         return true;
-    }
-
-    // Categories
-    public async Task<CategoryDto> CreateCategoryAsync(
-        CategoryCreateRequest request)
-    {
-        var id = Guid.NewGuid();
-        var slug = request.Slug.Trim().ToLowerInvariant();
-
-        if (await _dataContext.Categories.AnyAsync(
-            c => c.Slug == slug))
-        {
-            throw new InvalidOperationException(
-                "A category with this slug already exists.");
-        }
-
-        await EnsureValidParentCategoryAsync(
-            id,
-            request.ParentCategoryId);
-
-        var category = new Category
-        {
-            Id = id,
-            Name = request.Name.Trim(),
-            Slug = slug,
-            Description = request.Description?.Trim(),
-            ImageUrl = request.ImageUrl?.Trim(),
-            ParentCategoryId = request.ParentCategoryId,
-            SortOrder = request.SortOrder,
-            IsActive = true
-        };
-
-        _dataContext.Categories.Add(category);
-        await _dataContext.SaveChangesAsync();
-
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Slug = category.Slug,
-            Description = category.Description,
-            ImageUrl = category.ImageUrl,
-            ParentCategoryId = category.ParentCategoryId,
-            SortOrder = category.SortOrder
-        };
-    }
-    public async Task<CategoryDto?> UpdateCategoryAsync(
-        Guid id,
-        CategoryUpdateRequest request)
-    {
-        var category = await _dataContext.Categories
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (category is null)
-        {
-            return null;
-        }
-
-        var slug = request.Slug.Trim().ToLowerInvariant();
-
-        if (await _dataContext.Categories.AnyAsync(
-            c => c.Slug == slug && c.Id != id))
-        {
-            throw new InvalidOperationException(
-                "A category with this slug already exists.");
-        }
-
-        await EnsureValidParentCategoryAsync(
-            id,
-            request.ParentCategoryId);
-
-        category.Name = request.Name.Trim();
-        category.Slug = slug;
-        category.Description = request.Description?.Trim();
-        category.ImageUrl = request.ImageUrl?.Trim();
-        category.ParentCategoryId = request.ParentCategoryId;
-        category.SortOrder = request.SortOrder;
-        category.IsActive = request.IsActive;
-
-        await _dataContext.SaveChangesAsync();
-
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Slug = category.Slug,
-            Description = category.Description,
-            ImageUrl = category.ImageUrl,
-            ParentCategoryId = category.ParentCategoryId,
-            SortOrder = category.SortOrder
-        };
-    }
-    public async Task<bool> DeleteCategoryAsync(Guid id)
-    {
-        var category = await _dataContext.Categories
-            .FirstOrDefaultAsync(c => c.Id == id);
-
-        if (category is null)
-        {
-            return false;
-        }
-
-        _dataContext.Categories.Remove(category);
-        await _dataContext.SaveChangesAsync();
-
-        return true;
-    }
-    private async Task EnsureValidParentCategoryAsync(
-        Guid categoryId,
-        Guid? parentCategoryId)
-    {
-        if (!parentCategoryId.HasValue)
-        {
-            return;
-        }
-
-        var parents = await _dataContext.Categories
-            .AsNoTracking()
-            .Where(c => c.IsActive)
-            .Select(c => new
-            {
-                c.Id,
-                c.ParentCategoryId
-            })
-            .ToDictionaryAsync(c => c.Id, c => c.ParentCategoryId);
-
-        if (!parents.ContainsKey(parentCategoryId.Value))
-        {
-            throw new ArgumentException(
-                "The parent category does not exist or is inactive.");
-        }
-
-        var visited = new HashSet<Guid>();
-        Guid? currentId = parentCategoryId;
-
-        while (currentId.HasValue)
-        {
-            if (currentId.Value == categoryId)
-            {
-                throw new ArgumentException(
-                    "A category cannot be its own ancestor.");
-            }
-
-            if (!visited.Add(currentId.Value))
-            {
-                throw new ArgumentException(
-                    "The category hierarchy contains a cycle.");
-            }
-
-            if (!parents.TryGetValue(currentId.Value, out currentId))
-            {
-                break;
-            }
-        }
     }
 
 
@@ -1751,5 +1848,22 @@ public class DataAccessor(
     private static string BuildProductImageUrl(string imageKey)
     {
         return $"/api/products/images/{Uri.EscapeDataString(imageKey)}";
+    }
+    private static string? BuildCategoryImageUrl(string? imageKey)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey))
+        {
+            return null;
+        }
+
+        // Preserve existing absolute HTTP(S) image URLs.
+        if (Uri.TryCreate(imageKey, UriKind.Absolute, out var uri) &&
+            (uri.Scheme == Uri.UriSchemeHttp ||
+             uri.Scheme == Uri.UriSchemeHttps))
+        {
+            return imageKey;
+        }
+
+        return $"/api/categories/images/{Uri.EscapeDataString(imageKey)}";
     }
 }

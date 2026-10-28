@@ -1,5 +1,4 @@
-﻿
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace foxtrot_store_backend.Models.Categories;
 
@@ -17,12 +16,8 @@ public class CategoryUpdateRequest
     [StringLength(1000)]
     public string? Description { get; set; }
 
-    public string? ImageUrl { get; set; }
-
     public Guid? ParentCategoryId { get; set; }
 
     [Range(0, int.MaxValue)]
     public int SortOrder { get; set; }
-
-    public bool IsActive { get; set; } = true;
-}    
+}
