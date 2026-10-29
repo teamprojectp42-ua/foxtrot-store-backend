@@ -1,5 +1,4 @@
-﻿
-namespace foxtrot_store_backend.Models.Products;
+﻿namespace foxtrot_store_backend.Models.Products;
 
 public class ProductCatalogResponseDto
 {

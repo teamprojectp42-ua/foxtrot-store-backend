@@ -308,8 +308,11 @@ public class DataAccessor(
 
                 Specifications = product.Specifications
                     .OrderBy(specification => specification.SortOrder)
+                    .ThenBy(specification => specification.Name)
+                    .ThenBy(specification => specification.Id)
                     .Select(specification => new ProductSpecificationDto
                     {
+                        Id = specification.Id,
                         Name = specification.Name,
                         Value = specification.Value,
                         SortOrder = specification.SortOrder
@@ -381,8 +384,11 @@ public class DataAccessor(
 
                 Specifications = product.Specifications
                     .OrderBy(specification => specification.SortOrder)
+                    .ThenBy(specification => specification.Name)
+                    .ThenBy(specification => specification.Id)
                     .Select(specification => new ProductSpecificationDto
                     {
+                        Id = specification.Id,
                         Name = specification.Name,
                         Value = specification.Value,
                         SortOrder = specification.SortOrder
@@ -467,11 +473,35 @@ public class DataAccessor(
         }
 
         // Validate specification names.
-        var specificationNames = request.Specifications
-            .Select(specification => specification.Name.Trim())
+        if (request.Specifications is null)
+        {
+            throw new ArgumentException(
+                "Specifications cannot be null.");
+        }
+
+        var specifications = request.Specifications
+            .Select(specification =>
+            {
+                var (name, value) = ValidateAndNormalizeSpecification(
+                    specification.Name,
+                    specification.Value,
+                    specification.SortOrder);
+
+                return new
+                {
+                    Name = name,
+                    Value = value,
+                    specification.SortOrder
+                };
+            })
             .ToList();
 
-        if (specificationNames.Distinct(StringComparer.OrdinalIgnoreCase).Count()
+        var specificationNames = specifications
+            .Select(specification => specification.Name)
+            .ToList();
+
+        if (specificationNames.Distinct(
+                StringComparer.OrdinalIgnoreCase).Count()
             != specificationNames.Count)
         {
             throw new ArgumentException(
@@ -507,15 +537,15 @@ public class DataAccessor(
             });
         }
 
-        foreach (var specification in request.Specifications)
+        foreach (var specification in specifications)
         {
             _dataContext.ProductSpecifications.Add(
                 new ProductSpecification
                 {
                     Id = await GetDbIdentityAsync(),
                     ProductId = product.Id,
-                    Name = specification.Name.Trim(),
-                    Value = specification.Value.Trim(),
+                    Name = specification.Name,
+                    Value = specification.Value,
                     SortOrder = specification.SortOrder
                 });
         }
@@ -572,8 +602,11 @@ public class DataAccessor(
 
                 Specifications = product.Specifications
                     .OrderBy(specification => specification.SortOrder)
+                    .ThenBy(specification => specification.Name)
+                    .ThenBy(specification => specification.Id)
                     .Select(specification => new ProductSpecificationDto
                     {
+                        Id = specification.Id,
                         Name = specification.Name,
                         Value = specification.Value,
                         SortOrder = specification.SortOrder
@@ -668,12 +701,26 @@ public class DataAccessor(
         }
 
         // Normalize and validate specification names before modifying the product.
+        if (request.Specifications is null)
+        {
+            throw new ArgumentException(
+                "Specifications cannot be null.");
+        }
+
         var specifications = request.Specifications
-            .Select(specification => new
+            .Select(specification =>
             {
-                Name = specification.Name.Trim(),
-                Value = specification.Value.Trim(),
-                specification.SortOrder
+                var (name, value) = ValidateAndNormalizeSpecification(
+                    specification.Name,
+                    specification.Value,
+                    specification.SortOrder);
+
+                return new
+                {
+                    Name = name,
+                    Value = value,
+                    specification.SortOrder
+                };
             })
             .ToList();
 
@@ -805,7 +852,269 @@ public class DataAccessor(
         return true;
     }
 
+    public async Task<List<ProductSpecificationDto>?> GetProductSpecificationsAsync(
+        Guid productId,
+        bool includeInactiveProduct = false)
+    {
+        var productQuery = _dataContext.Products
+            .AsNoTracking()
+            .Where(product => product.Id == productId);
 
+        if (!includeInactiveProduct)
+        {
+            productQuery = productQuery.Where(product => product.IsActive);
+        }
+
+        if (!await productQuery.AnyAsync())
+        {
+            return null;
+        }
+
+        return await _dataContext.ProductSpecifications
+            .AsNoTracking()
+            .Where(specification => specification.ProductId == productId)
+            .OrderBy(specification => specification.SortOrder)
+            .ThenBy(specification => specification.Name)
+            .ThenBy(specification => specification.Id)
+            .Select(specification => new ProductSpecificationDto
+            {
+                Id = specification.Id,
+                Name = specification.Name,
+                Value = specification.Value,
+                SortOrder = specification.SortOrder
+            })
+            .ToListAsync();
+    }
+    public async Task<ProductSpecificationDto?> GetProductSpecificationAsync(
+        Guid productId,
+        Guid specificationId,
+        bool includeInactiveProduct = false)
+    {
+        var productQuery = _dataContext.Products
+            .AsNoTracking()
+            .Where(product => product.Id == productId);
+
+        if (!includeInactiveProduct)
+        {
+            productQuery = productQuery.Where(product => product.IsActive);
+        }
+
+        if (!await productQuery.AnyAsync())
+        {
+            return null;
+        }
+
+        return await _dataContext.ProductSpecifications
+            .AsNoTracking()
+            .Where(specification =>
+                specification.ProductId == productId &&
+                specification.Id == specificationId)
+            .Select(specification => new ProductSpecificationDto
+            {
+                Id = specification.Id,
+                Name = specification.Name,
+                Value = specification.Value,
+                SortOrder = specification.SortOrder
+            })
+            .FirstOrDefaultAsync();
+    }
+    private async Task EnsureSpecificationNameIsUniqueAsync(
+        Guid productId,
+        string name,
+        Guid? excludeSpecificationId = null)
+    {
+        var query = _dataContext.ProductSpecifications
+            .AsNoTracking()
+            .Where(specification => specification.ProductId == productId);
+
+        if (excludeSpecificationId.HasValue)
+        {
+            query = query.Where(specification =>
+                specification.Id != excludeSpecificationId.Value);
+        }
+
+        var existingNames = await query
+            .Select(specification => specification.Name)
+            .ToListAsync();
+
+        if (existingNames.Any(existingName =>
+            string.Equals(
+                existingName.Trim(),
+                name,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "A specification with this name already exists for the product.");
+        }
+    }
+    public async Task<ProductSpecificationDto> CreateProductSpecificationAsync(
+        Guid productId,
+        ProductSpecificationCreateRequest request)
+    {
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(product => product.Id == productId);
+
+        if (product is null)
+        {
+            throw new KeyNotFoundException("Product not found.");
+        }
+
+        var (name, value) = ValidateAndNormalizeSpecification(
+            request.Name,
+            request.Value,
+            request.SortOrder);
+
+        await EnsureSpecificationNameIsUniqueAsync(productId, name);
+
+        var specification = new ProductSpecification
+        {
+            Id = await GetDbIdentityAsync(),
+            ProductId = productId,
+            Name = name,
+            Value = value,
+            SortOrder = request.SortOrder
+        };
+
+        _dataContext.ProductSpecifications.Add(specification);
+
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await SaveChangesOrThrowConflictAsync();
+
+        return new ProductSpecificationDto
+        {
+            Id = specification.Id,
+            Name = specification.Name,
+            Value = specification.Value,
+            SortOrder = specification.SortOrder
+        };
+    }
+    public async Task<ProductSpecificationDto?> UpdateProductSpecificationAsync(
+        Guid productId,
+        Guid specificationId,
+        ProductSpecificationUpdateRequest request)
+    {
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(product => product.Id == productId);
+
+        if (product is null)
+        {
+            return null;
+        }
+
+        var specification = await _dataContext.ProductSpecifications
+            .FirstOrDefaultAsync(specification =>
+                specification.Id == specificationId &&
+                specification.ProductId == productId);
+
+        if (specification is null)
+        {
+            return null;
+        }
+
+        var (name, value) = ValidateAndNormalizeSpecification(
+            request.Name,
+            request.Value,
+            request.SortOrder);
+
+        await EnsureSpecificationNameIsUniqueAsync(
+            productId,
+            name,
+            specificationId);
+
+        specification.Name = name;
+        specification.Value = value;
+        specification.SortOrder = request.SortOrder;
+
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await SaveChangesOrThrowConflictAsync();
+
+        return new ProductSpecificationDto
+        {
+            Id = specification.Id,
+            Name = specification.Name,
+            Value = specification.Value,
+            SortOrder = specification.SortOrder
+        };
+    }
+    public async Task<bool> DeleteProductSpecificationAsync(
+        Guid productId,
+        Guid specificationId)
+    {
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(product => product.Id == productId);
+
+        if (product is null)
+        {
+            return false;
+        }
+
+        var specification = await _dataContext.ProductSpecifications
+            .FirstOrDefaultAsync(specification =>
+                specification.Id == specificationId &&
+                specification.ProductId == productId);
+
+        if (specification is null)
+        {
+            return false;
+        }
+
+        _dataContext.ProductSpecifications.Remove(specification);
+
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync();
+
+        return true;
+    }
+
+
+    private static (string Name, string Value) ValidateAndNormalizeSpecification(
+        string name,
+        string value,
+        int sortOrder)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException(
+                "Specification name is required.",
+                nameof(name));
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException(
+                "Specification value is required.",
+                nameof(value));
+        }
+
+        name = name.Trim();
+        value = value.Trim();
+
+        if (name.Length > 150)
+        {
+            throw new ArgumentException(
+                "Specification name cannot exceed 150 characters.",
+                nameof(name));
+        }
+
+        if (value.Length > 1000)
+        {
+            throw new ArgumentException(
+                "Specification value cannot exceed 1000 characters.",
+                nameof(value));
+        }
+
+        if (sortOrder < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sortOrder),
+                "SortOrder cannot be negative.");
+        }
+
+        return (name, value);
+    }
     private static string BuildProductImageUrl(string imageKey)
     {
         return $"/api/products/images/{Uri.EscapeDataString(imageKey)}";

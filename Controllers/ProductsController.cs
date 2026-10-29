@@ -294,6 +294,68 @@ public class ProductsController(
         return File(imageStream, contentType);
     }
 
+    [HttpGet("{productId:guid}/specifications")]
+    public async Task<IActionResult> GetProductSpecifications(
+        Guid productId)
+    {
+        var path = $"/api/products/{productId}/specifications";
+
+        var specifications =
+            await _dataAccessor.GetProductSpecificationsAsync(
+                productId,
+                User.IsInRole("Admin"));
+
+        if (specifications is null)
+        {
+            return NotFound(CreateSpecificationResponse(
+                RestStatus.NotFound,
+                new { message = "Product not found." },
+                "json/object",
+                path,
+                "GET"));
+        }
+
+        return Ok(CreateSpecificationResponse(
+            RestStatus.Ok,
+            specifications,
+            "json/array",
+            path,
+            "GET"));
+    }
+
+    [HttpGet(
+    "{productId:guid}/specifications/{specificationId:guid}")]
+    public async Task<IActionResult> GetProductSpecification(
+        Guid productId,
+        Guid specificationId)
+    {
+        var path =
+            $"/api/products/{productId}/specifications/{specificationId}";
+
+        var specification =
+            await _dataAccessor.GetProductSpecificationAsync(
+                productId,
+                specificationId,
+                User.IsInRole("Admin"));
+
+        if (specification is null)
+        {
+            return NotFound(CreateSpecificationResponse(
+                RestStatus.NotFound,
+                new { message = "Product or specification not found." },
+                "json/object",
+                path,
+                "GET"));
+        }
+
+        return Ok(CreateSpecificationResponse(
+            RestStatus.Ok,
+            specification,
+            "json/object",
+            path,
+            "GET"));
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateProduct(
@@ -358,6 +420,66 @@ public class ProductsController(
     }
 
     [Authorize(Roles = "Admin")]
+    [HttpPost("{productId:guid}/specifications")]
+    public async Task<IActionResult> CreateProductSpecification(
+        Guid productId,
+        [FromBody] ProductSpecificationCreateRequest request)
+    {
+        var path = $"/api/products/{productId}/specifications";
+
+        try
+        {
+            var specification =
+                await _dataAccessor.CreateProductSpecificationAsync(
+                    productId,
+                    request);
+
+            var response = CreateSpecificationResponse(
+                RestStatus.Created,
+                specification,
+                "json/object",
+                $"{path}/{specification.Id}",
+                "GET");
+
+            return CreatedAtAction(
+                nameof(GetProductSpecification),
+                new
+                {
+                    productId,
+                    specificationId = specification.Id
+                },
+                response);
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return NotFound(CreateSpecificationResponse(
+                RestStatus.NotFound,
+                new { message = exception.Message },
+                "json/object",
+                path,
+                "POST"));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(CreateSpecificationResponse(
+                RestStatus.Conflict,
+                new { message = exception.Message },
+                "json/object",
+                path,
+                "POST"));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(CreateSpecificationResponse(
+                RestStatus.BadRequest,
+                new { message = exception.Message },
+                "json/object",
+                path,
+                "POST"));
+        }
+    }
+
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> UpdateProduct(
         Guid id,
@@ -411,6 +533,62 @@ public class ProductsController(
     }
 
     [Authorize(Roles = "Admin")]
+    [HttpPut(
+    "{productId:guid}/specifications/{specificationId:guid}")]
+    public async Task<IActionResult> UpdateProductSpecification(
+        Guid productId,
+        Guid specificationId,
+        [FromBody] ProductSpecificationUpdateRequest request)
+    {
+        var path =
+            $"/api/products/{productId}/specifications/{specificationId}";
+
+        try
+        {
+            var specification =
+                await _dataAccessor.UpdateProductSpecificationAsync(
+                    productId,
+                    specificationId,
+                    request);
+
+            if (specification is null)
+            {
+                return NotFound(CreateSpecificationResponse(
+                    RestStatus.NotFound,
+                    new { message = "Product or specification not found." },
+                    "json/object",
+                    path,
+                    "PUT"));
+            }
+
+            return Ok(CreateSpecificationResponse(
+                RestStatus.Ok,
+                specification,
+                "json/object",
+                path,
+                "PUT"));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(CreateSpecificationResponse(
+                RestStatus.Conflict,
+                new { message = exception.Message },
+                "json/object",
+                path,
+                "PUT"));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(CreateSpecificationResponse(
+                RestStatus.BadRequest,
+                new { message = exception.Message },
+                "json/object",
+                path,
+                "PUT"));
+        }
+    }
+
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteProduct(Guid id)
     {
@@ -432,6 +610,39 @@ public class ProductsController(
             Meta = new RestMeta { ApiName = "Product" },
             Data = new { message = "Product deactivated successfully." }
         });
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpDelete(
+    "{productId:guid}/specifications/{specificationId:guid}")]
+    public async Task<IActionResult> DeleteProductSpecification(
+        Guid productId,
+        Guid specificationId)
+    {
+        var path =
+            $"/api/products/{productId}/specifications/{specificationId}";
+
+        var deleted =
+            await _dataAccessor.DeleteProductSpecificationAsync(
+                productId,
+                specificationId);
+
+        if (!deleted)
+        {
+            return NotFound(CreateSpecificationResponse(
+                RestStatus.NotFound,
+                new { message = "Product or specification not found." },
+                "json/object",
+                path,
+                "DELETE"));
+        }
+
+        return Ok(CreateSpecificationResponse(
+            RestStatus.Ok,
+            new { message = "Product specification deleted successfully." },
+            "json/object",
+            path,
+            "DELETE"));
     }
 
     [Authorize(Roles = "Admin")]
@@ -568,5 +779,32 @@ public class ProductsController(
             isPrimary,
             sortOrder
         });
+    }
+
+
+    private static RestResponse CreateSpecificationResponse(
+        RestStatus status,
+        object? data,
+        string dataType,
+        string path,
+        string method)
+    {
+        return new RestResponse
+        {
+            Status = status,
+            Meta = new RestMeta
+            {
+                ApiName = "ProductSpecifications",
+                DataType = dataType,
+                CacheTime = 0,
+                Manipulations = [method],
+                Links =
+            {
+                ["parent"] = "/api/products",
+                ["self"] = path
+            }
+            },
+            Data = data
+        };
     }
 }

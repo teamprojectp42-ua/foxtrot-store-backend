@@ -1,6 +1,6 @@
 ﻿# Products API — інструкція з використання
 
-Цей документ пояснює, як працювати з товарами через API Foxtrot Store Backend: переглядати каталог, шукати товари, створювати й редагувати їх, завантажувати зображення, а також деактивувати та відновлювати товари.
+Цей документ пояснює, як працювати з товарами через API Foxtrot Store Backend: переглядати каталог, шукати товари, створювати й редагувати їх, керувати характеристиками, завантажувати зображення, а також деактивувати та відновлювати товари.
 
 ## Перед початком
 
@@ -27,6 +27,11 @@ Authorization: Bearer {{adminToken}}
 | `DELETE` | `/api/products/{id}` | Деактивувати товар — потрібен `Admin` |
 | `POST` | `/api/products/{id}/restore` | Відновити товар — потрібен `Admin` |
 | `POST` | `/api/products/{id}/images` | Завантажити зображення — потрібен `Admin` |
+| `GET` | `/api/products/{productId}/specifications` | Отримати характеристики товару |
+| `GET` | `/api/products/{productId}/specifications/{specificationId}` | Отримати одну характеристику |
+| `POST` | `/api/products/{productId}/specifications` | Створити характеристику — потрібен `Admin` |
+| `PUT` | `/api/products/{productId}/specifications/{specificationId}` | Оновити характеристику — потрібен `Admin` |
+| `DELETE` | `/api/products/{productId}/specifications/{specificationId}` | Видалити характеристику — потрібен `Admin` |
 
 ## 1. Перегляд каталогу
 
@@ -140,6 +145,7 @@ ID — це GUID товару, який повертає API. `slug` — адр�
   ],
   "specifications": [
     {
+      "id": "00000000-0000-0000-0000-000000000010",
       "name": "Колір",
       "value": "Чорний",
       "sortOrder": 0
@@ -323,3 +329,182 @@ https://localhost:<port>/api/products/images/a1b2c3d4e5f678901234567890abcdef.we
 Якщо інтерфейс сайту працює на іншому домені або порту, додайте перед цим шляхом базову адресу API.
 
 Якщо зображення не знайдено, очікується `404 Not Found`; якщо розширення не підтримується — `400 Bad Request`.
+
+## 8. Окреме керування характеристиками товару
+
+Характеристики зберігаються в `ProductSpecifications` і належать конкретному товару. Вони також повертаються в `specifications` під час отримання товару через `GET /api/products/{id}` або `GET /api/products/slug/{slug}`.
+
+Для незалежного керування характеристиками доступні окремі endpoints. Читання публічне для активних товарів; створення, редагування та видалення доступні лише користувачам із роллю `Admin`.
+
+### Список характеристик
+
+```http
+GET {{baseUrl}}/api/products/{{productId}}/specifications
+```
+
+Відповідь повертає масив `data`, відсортований за `sortOrder` за зростанням, потім за `name` і `id`. Якщо передати дійсний JWT адміністратора, можна отримати характеристики також неактивного товару. Для публічного запиту неактивний або відсутній товар повертає `404 Not Found`.
+
+Приклад структури відповіді:
+
+```json
+{
+  "status": {
+    "isOk": true,
+    "code": 200,
+    "message": "OK"
+  },
+  "meta": {
+    "apiName": "ProductSpecifications",
+    "dataType": "json/array",
+    "cacheTime": 0,
+    "manipulations": ["GET"],
+    "links": {
+      "parent": "/api/products",
+      "self": "/api/products/00000000-0000-0000-0000-000000000001/specifications"
+    }
+  },
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "name": "Колір",
+      "value": "Чорний",
+      "sortOrder": 0
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "name": "Пам'ять",
+      "value": "256 GB",
+      "sortOrder": 1
+    }
+  ]
+}
+```
+
+### Одна характеристика
+
+```http
+GET {{baseUrl}}/api/products/{{productId}}/specifications/{{specificationId}}
+```
+
+Успішна відповідь повертає один об'єкт `ProductSpecificationDto` у полі `data`, з полями `id`, `name`, `value` і `sortOrder`. Якщо товар недоступний для поточного запиту або характеристику з таким ID не знайдено в межах цього товару, повертається `404 Not Found`.
+
+### Створення характеристики
+
+Потрібен JWT-токен адміністратора.
+
+```http
+POST {{baseUrl}}/api/products/{{productId}}/specifications
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+```
+
+Тіло запиту:
+
+```json
+{
+  "name": "RAM",
+  "value": "16 GB",
+  "sortOrder": 1
+}
+```
+
+`id` і `productId` створюються/визначаються сервером і не передаються в тілі запиту. Приклад успішної відповіді:
+
+```json
+{
+  "status": {
+    "isOk": true,
+    "code": 201,
+    "message": "Created"
+  },
+  "meta": {
+    "apiName": "ProductSpecifications",
+    "dataType": "json/object",
+    "cacheTime": 0,
+    "manipulations": ["GET"],
+    "links": {
+      "parent": "/api/products",
+      "self": "/api/products/00000000-0000-0000-0000-000000000001/specifications/00000000-0000-0000-0000-000000000010"
+    }
+  },
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000010",
+    "name": "RAM",
+    "value": "16 GB",
+    "sortOrder": 1
+  }
+}
+```
+
+Очікувані помилки: `400 Bad Request` для порожнього/некоректного значення або від'ємного `sortOrder`; `404 Not Found`, якщо товар відсутній; `409 Conflict`, якщо така назва характеристики вже існує в межах товару.
+
+### Редагування характеристики
+
+Потрібен JWT-токен адміністратора.
+
+```http
+PUT {{baseUrl}}/api/products/{{productId}}/specifications/{{specificationId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+```
+
+Передавайте повний набір полів характеристики:
+
+```json
+{
+  "name": "RAM",
+  "value": "32 GB",
+  "sortOrder": 1
+}
+```
+
+Успішна відповідь — `200 OK` із оновленим об'єктом у `data`. API перевіряє, що характеристика належить указаному товару. Якщо товар або характеристику не знайдено, повертається `404 Not Found`; помилки валідації — `400 Bad Request`; повторна назва в межах того самого товару — `409 Conflict`.
+
+### Видалення характеристики
+
+Потрібен JWT-токен адміністратора.
+
+```http
+DELETE {{baseUrl}}/api/products/{{productId}}/specifications/{{specificationId}}
+Authorization: Bearer {{adminToken}}
+```
+
+Успішна відповідь — `200 OK`:
+
+```json
+{
+  "status": {
+    "isOk": true,
+    "code": 200,
+    "message": "OK"
+  },
+  "meta": {
+    "apiName": "ProductSpecifications",
+    "dataType": "json/object",
+    "cacheTime": 0,
+    "manipulations": ["DELETE"],
+    "links": {
+      "parent": "/api/products",
+      "self": "/api/products/00000000-0000-0000-0000-000000000001/specifications/00000000-0000-0000-0000-000000000010"
+    }
+  },
+  "data": {
+    "message": "Product specification deleted successfully."
+  }
+}
+```
+
+Якщо товар або характеристику не знайдено — `404 Not Found`. Видалення характеристики є остаточним; на відміну від товару, характеристика не деактивується окремим прапорцем.
+
+### Правила характеристик
+
+| Поле | Правила |
+|---|---|
+| `id` | GUID, створюється сервером і повертається у відповідях |
+| `name` | Обов'язкове, після обрізання пробілів не може бути порожнім; максимум 150 символів |
+| `value` | Обов'язкове, після обрізання пробілів не може бути порожнім; максимум 1000 символів |
+| `sortOrder` | Ціле число від 0 і більше; менше значення відображається раніше |
+
+Назви не можуть повторюватися в межах одного товару без урахування регістру. Однакові назви в різних товарах дозволені. Оновлення або видалення перевіряє і `productId`, і `specificationId`, щоб не змінити характеристику іншого товару.
+
+Характеристики можна також створювати разом із товаром через `POST /api/products` і синхронізувати під час `PUT /api/products/{id}`. У цьому випадку `specifications` — повний бажаний список: характеристики, яких немає в переданому списку, видаляються, а наявні оновлюються за назвою. Для редагування або видалення однієї конкретної характеристики без надсилання всіх полів товару використовуйте окремі endpoints з цього розділу.
