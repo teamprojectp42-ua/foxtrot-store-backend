@@ -29,12 +29,53 @@ public class DataAccessor(
 
 
     // Products
-    public async Task<bool> AddProductImageAsync(
-    Guid productId,
-    string imageKey,
-    bool isPrimary,
-    int sortOrder,
-    CancellationToken cancellationToken = default)
+    public async Task<List<ProductImageDto>?> GetProductImagesAsync(
+        Guid productId,
+        bool includeInactiveProduct = false,
+        CancellationToken cancellationToken = default)
+    {
+        var productQuery = _dataContext.Products
+            .AsNoTracking()
+            .Where(product => product.Id == productId);
+
+        if (!includeInactiveProduct)
+        {
+            productQuery = productQuery.Where(product => product.IsActive);
+        }
+
+        if (!await productQuery.AnyAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var images = await _dataContext.ProductImages
+            .AsNoTracking()
+            .Where(image => image.ProductId == productId)
+            .OrderByDescending(image => image.IsPrimary)
+            .ThenBy(image => image.SortOrder)
+            .ThenBy(image => image.Id)
+            .Select(image => new ProductImageDto
+            {
+                Id = image.Id,
+                ImageUrl = image.ImageUrl,
+                IsPrimary = image.IsPrimary,
+                SortOrder = image.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+
+        foreach (var image in images)
+        {
+            image.ImageUrl = BuildProductImageUrl(image.ImageUrl);
+        }
+
+        return images;
+    }
+    public async Task<ProductImageDto?> AddProductImageAsync(
+        Guid productId,
+        string imageKey,
+        bool isPrimary,
+        int sortOrder,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(imageKey))
         {
@@ -53,15 +94,14 @@ public class DataAccessor(
         var product = await _dataContext.Products
             .Include(product => product.Images)
             .FirstOrDefaultAsync(
-                product => product.Id == productId && product.IsActive,
+                product => product.Id == productId,
                 cancellationToken);
 
         if (product is null)
         {
-            return false;
+            return null;
         }
 
-        // A product can have at most one primary image.
         if (isPrimary)
         {
             foreach (var existingImage in product.Images)
@@ -85,7 +125,131 @@ public class DataAccessor(
 
         await _dataContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        return new ProductImageDto
+        {
+            Id = image.Id,
+            ImageUrl = BuildProductImageUrl(image.ImageUrl),
+            IsPrimary = image.IsPrimary,
+            SortOrder = image.SortOrder
+        };
+    }
+    public async Task<ProductImageDto?> UpdateProductImageAsync(
+        Guid productId,
+        Guid imageId,
+        ProductImageUpdateRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!request.IsPrimary.HasValue)
+        {
+            throw new ArgumentException(
+                "IsPrimary is required.",
+                nameof(request));
+        }
+
+        if (!request.SortOrder.HasValue || request.SortOrder.Value < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                "SortOrder must be zero or greater.");
+        }
+
+        var product = await _dataContext.Products
+            .Include(product => product.Images)
+            .FirstOrDefaultAsync(
+                product => product.Id == productId,
+                cancellationToken);
+
+        if (product is null)
+        {
+            return null;
+        }
+
+        var image = product.Images
+            .FirstOrDefault(image => image.Id == imageId);
+
+        if (image is null)
+        {
+            return null;
+        }
+
+        if (request.IsPrimary.Value)
+        {
+            foreach (var otherImage in product.Images)
+            {
+                otherImage.IsPrimary = otherImage.Id == imageId;
+            }
+        }
+        else
+        {
+            image.IsPrimary = false;
+        }
+
+        image.SortOrder = request.SortOrder.Value;
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        return new ProductImageDto
+        {
+            Id = image.Id,
+            ImageUrl = BuildProductImageUrl(image.ImageUrl),
+            IsPrimary = image.IsPrimary,
+            SortOrder = image.SortOrder
+        };
+    }
+    public async Task<(bool Deleted, string? ImageKey)> DeleteProductImageAsync(
+        Guid productId,
+        Guid imageId,
+        CancellationToken cancellationToken = default)
+    {
+        var product = await _dataContext.Products
+            .Include(product => product.Images)
+            .FirstOrDefaultAsync(
+                product => product.Id == productId,
+                cancellationToken);
+
+        if (product is null)
+        {
+            return (false, null);
+        }
+
+        var image = product.Images
+            .FirstOrDefault(image => image.Id == imageId);
+
+        if (image is null)
+        {
+            return (false, null);
+        }
+
+        var imageKey = image.ImageUrl;
+        var wasPrimary = image.IsPrimary;
+
+        _dataContext.ProductImages.Remove(image);
+
+        if (wasPrimary)
+        {
+            var remainingImages = product.Images
+                .Where(otherImage => otherImage.Id != imageId)
+                .OrderBy(otherImage => otherImage.SortOrder)
+                .ThenBy(otherImage => otherImage.Id)
+                .ToList();
+
+            foreach (var remainingImage in remainingImages)
+            {
+                remainingImage.IsPrimary = false;
+            }
+
+            if (remainingImages.Count > 0)
+            {
+                remainingImages[0].IsPrimary = true;
+            }
+        }
+
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        return (true, imageKey);
     }
     public async Task<ProductCatalogResponseDto> GetProductsAsync(
         ProductCatalogQuery query)
@@ -298,8 +462,10 @@ public class DataAccessor(
                 Images = product.Images
                     .OrderByDescending(image => image.IsPrimary)
                     .ThenBy(image => image.SortOrder)
+                    .ThenBy(image => image.Id)
                     .Select(image => new ProductImageDto
                     {
+                        Id = image.Id,
                         ImageUrl = image.ImageUrl,
                         IsPrimary = image.IsPrimary,
                         SortOrder = image.SortOrder
@@ -374,8 +540,10 @@ public class DataAccessor(
                 Images = product.Images
                     .OrderByDescending(image => image.IsPrimary)
                     .ThenBy(image => image.SortOrder)
+                    .ThenBy(image => image.Id)
                     .Select(image => new ProductImageDto
                     {
+                        Id = image.Id,
                         ImageUrl = image.ImageUrl,
                         IsPrimary = image.IsPrimary,
                         SortOrder = image.SortOrder
@@ -592,8 +760,10 @@ public class DataAccessor(
                 Images = product.Images
                     .OrderByDescending(image => image.IsPrimary)
                     .ThenBy(image => image.SortOrder)
+                    .ThenBy(image => image.Id)
                     .Select(image => new ProductImageDto
                     {
+                        Id = image.Id,
                         ImageUrl = image.ImageUrl,
                         IsPrimary = image.IsPrimary,
                         SortOrder = image.SortOrder
@@ -633,8 +803,8 @@ public class DataAccessor(
         return product;
     }
     public async Task<ProductDetailsDto?> UpdateProductAsync(
-    Guid id,
-    ProductUpdateRequest request)
+        Guid id,
+        ProductUpdateRequest request)
     {
         // Includes inactive products intentionally:
         // administrators may edit archived products.

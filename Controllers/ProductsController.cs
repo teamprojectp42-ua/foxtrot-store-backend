@@ -12,9 +12,11 @@ namespace foxtrot_store_backend.Controllers;
 [Route("api/products")]
 public class ProductsController(
     DataAccessor dataAccessor,
-    ILocalStorageService localStorage) : ControllerBase
+    ILocalStorageService localStorage,
+    ILogger<ProductsController> logger) : ControllerBase
 {
     private readonly DataAccessor _dataAccessor = dataAccessor;
+    private readonly ILogger<ProductsController> _logger = logger;
 
     [HttpGet]
     public async Task<IActionResult> GetProducts(
@@ -356,6 +358,36 @@ public class ProductsController(
             "GET"));
     }
 
+    [HttpGet("{productId:guid}/images")]
+    public async Task<IActionResult> GetProductImages(
+        Guid productId,
+        CancellationToken cancellationToken)
+    {
+        var path = $"/api/products/{productId}/images";
+
+        var images = await _dataAccessor.GetProductImagesAsync(
+            productId,
+            User.IsInRole("Admin"),
+            cancellationToken);
+
+        if (images is null)
+        {
+            return NotFound(CreateProductImageResponse(
+                RestStatus.NotFound,
+                new { message = "Product not found." },
+                "json/object",
+                path,
+                "GET"));
+        }
+
+        return Ok(CreateProductImageResponse(
+            RestStatus.Ok,
+            images,
+            "json/array",
+            path,
+            "GET"));
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateProduct(
@@ -533,6 +565,52 @@ public class ProductsController(
     }
 
     [Authorize(Roles = "Admin")]
+    [HttpPut("{productId:guid}/images/{imageId:guid}")]
+    public async Task<IActionResult> UpdateProductImage(
+        Guid productId,
+        Guid imageId,
+        [FromBody] ProductImageUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var path = $"/api/products/{productId}/images/{imageId}";
+
+        try
+        {
+            var image = await _dataAccessor.UpdateProductImageAsync(
+                productId,
+                imageId,
+                request,
+                cancellationToken);
+
+            if (image is null)
+            {
+                return NotFound(CreateProductImageResponse(
+                    RestStatus.NotFound,
+                    new { message = "Product or image not found." },
+                    "json/object",
+                    path,
+                    "PUT"));
+            }
+
+            return Ok(CreateProductImageResponse(
+                RestStatus.Ok,
+                image,
+                "json/object",
+                path,
+                "PUT"));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(CreateProductImageResponse(
+                RestStatus.BadRequest,
+                new { message = exception.Message },
+                "json/object",
+                path,
+                "PUT"));
+        }
+    }
+
+    [Authorize(Roles = "Admin")]
     [HttpPut(
     "{productId:guid}/specifications/{specificationId:guid}")]
     public async Task<IActionResult> UpdateProductSpecification(
@@ -610,6 +688,83 @@ public class ProductsController(
             Meta = new RestMeta { ApiName = "Product" },
             Data = new { message = "Product deactivated successfully." }
         });
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("{productId:guid}/images/{imageId:guid}")]
+    public async Task<IActionResult> DeleteProductImage(
+        Guid productId,
+        Guid imageId)
+    {
+        var path = $"/api/products/{productId}/images/{imageId}";
+
+        var result = await _dataAccessor.DeleteProductImageAsync(
+            productId,
+            imageId);
+
+        if (!result.Deleted || result.ImageKey is null)
+        {
+            return NotFound(CreateProductImageResponse(
+                RestStatus.NotFound,
+                new { message = "Product or image not found." },
+                "json/object",
+                path,
+                "DELETE"));
+        }
+
+        var fileCleanupCompleted = true;
+
+        if (IsLocalStorageProductImageKey(result.ImageKey))
+        {
+            try
+            {
+                await localStorage.DeleteAsync(
+                    result.ImageKey,
+                    CancellationToken.None);
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException or
+                System.Security.SecurityException)
+            {
+                fileCleanupCompleted = false;
+
+                _logger.LogError(
+                    exception,
+                    "Image record {ImageId} was deleted, but file {ImageKey} could not be removed.",
+                    imageId,
+                    result.ImageKey);
+            }
+        }
+
+        if (!fileCleanupCompleted)
+        {
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                CreateProductImageResponse(
+                    RestStatus.InternalServerError,
+                    new
+                    {
+                        message = "The image record was deleted, but the file could not be removed.",
+                        imageRecordDeleted = true,
+                        fileCleanupCompleted = false
+                    },
+                    "json/object",
+                    path,
+                    "DELETE"));
+        }
+
+        return Ok(CreateProductImageResponse(
+            RestStatus.Ok,
+            new
+            {
+                message = "Product image deleted successfully.",
+                imageRecordDeleted = true,
+                fileCleanupCompleted = true
+            },
+            "json/object",
+            path,
+            "DELETE"));
     }
 
     [Authorize(Roles = "Admin")]
@@ -696,20 +851,26 @@ public class ProductsController(
     [Authorize(Roles = "Admin")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadProductImage(
-    Guid id,
-    [FromForm] IFormFile? file,
-    [FromForm] bool isPrimary = false,
-    [FromForm] int sortOrder = 0,
-    CancellationToken cancellationToken = default)
+        Guid id,
+        [FromForm] IFormFile? file,
+        [FromForm] bool isPrimary = false,
+        [FromForm] int sortOrder = 0,
+        CancellationToken cancellationToken = default)
     {
         if (file is null || file.Length == 0)
         {
-            return BadRequest("An image file is required.");
+            return BadRequest(new
+            {
+                message = "An image file is required."
+            });
         }
 
         if (sortOrder < 0)
         {
-            return BadRequest("SortOrder cannot be negative.");
+            return BadRequest(new
+            {
+                message = "SortOrder cannot be negative."
+            });
         }
 
         string storageKey;
@@ -725,29 +886,41 @@ public class ProductsController(
         }
         catch (InvalidDataException exception)
         {
-            return BadRequest(new { message = exception.Message });
+            return BadRequest(new
+            {
+                message = exception.Message
+            });
         }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to store an image for product {ProductId}.",
+                id);
+
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                CreateProductImageResponse(
+                    RestStatus.InternalServerError,
+                    new { message = "The image could not be stored." },
+                    "json/object",
+                    $"/api/products/{id}/images",
+                    "POST"));
+        }
+
+        ProductImageDto? added;
 
         try
         {
-            var added = await dataAccessor.AddProductImageAsync(
+            added = await dataAccessor.AddProductImageAsync(
                 id,
                 storageKey,
                 isPrimary,
                 sortOrder,
                 cancellationToken);
-
-            if (!added)
-            {
-                await localStorage.DeleteAsync(
-                    storageKey,
-                    CancellationToken.None);
-
-                return NotFound(new
-                {
-                    message = "Active product was not found."
-                });
-            }
         }
         catch
         {
@@ -760,7 +933,6 @@ public class ProductsController(
             }
             catch (Exception cleanupException)
             {
-                // Cleanup failure must not hide the original database error.
                 HttpContext.RequestServices
                     .GetRequiredService<ILogger<ProductsController>>()
                     .LogError(
@@ -772,16 +944,64 @@ public class ProductsController(
             throw;
         }
 
+        if (added is null)
+        {
+            // The product was not found, so the uploaded file is unnecessary.
+            try
+            {
+                await localStorage.DeleteAsync(
+                    storageKey,
+                    CancellationToken.None);
+            }
+            catch (Exception cleanupException)
+            {
+                HttpContext.RequestServices
+                    .GetRequiredService<ILogger<ProductsController>>()
+                    .LogError(
+                        cleanupException,
+                        "Failed to remove image {StorageKey} for a missing product.",
+                        storageKey);
+            }
+
+            return NotFound(new
+            {
+                message = "Product not found."
+            });
+        }
+
         return Ok(new
         {
             productId = id,
+            imageId = added.Id,
             imageKey = storageKey,
-            isPrimary,
-            sortOrder
+            imageUrl = added.ImageUrl,
+            isPrimary = added.IsPrimary,
+            sortOrder = added.SortOrder
         });
     }
 
 
+    private static bool IsLocalStorageProductImageKey(string imageKey)
+    {
+        if (string.IsNullOrWhiteSpace(imageKey) ||
+            Path.IsPathRooted(imageKey) ||
+            imageKey.Contains('/') ||
+            imageKey.Contains('\\'))
+        {
+            return false;
+        }
+
+        var extension = Path.GetExtension(imageKey).ToLowerInvariant();
+
+        if (extension is not (".jpg" or ".png" or ".webp"))
+        {
+            return false;
+        }
+
+        var fileId = Path.GetFileNameWithoutExtension(imageKey);
+
+        return Guid.TryParseExact(fileId, "N", out _);
+    }
     private static RestResponse CreateSpecificationResponse(
         RestStatus status,
         object? data,
@@ -795,6 +1015,31 @@ public class ProductsController(
             Meta = new RestMeta
             {
                 ApiName = "ProductSpecifications",
+                DataType = dataType,
+                CacheTime = 0,
+                Manipulations = [method],
+                Links =
+            {
+                ["parent"] = "/api/products",
+                ["self"] = path
+            }
+            },
+            Data = data
+        };
+    }
+    private static RestResponse CreateProductImageResponse(
+        RestStatus status,
+        object? data,
+        string dataType,
+        string path,
+        string method)
+    {
+        return new RestResponse
+        {
+            Status = status,
+            Meta = new RestMeta
+            {
+                ApiName = "ProductImages",
                 DataType = dataType,
                 CacheTime = 0,
                 Manipulations = [method],
