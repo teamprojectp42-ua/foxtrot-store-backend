@@ -120,9 +120,9 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseRouting();
 
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors("Frontend");
 app.MapStaticAssets();
 app.MapControllers();
 

@@ -1,8 +1,9 @@
-﻿using foxtrot_store_backend.Constants;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace foxtrot_store_backend.Models.Auth;
 
-public class UpdateUserRoleRequest
+public sealed class UpdateUserRoleRequest
 {
-    public string Role { get; set; } = AppRoles.User;
+    [Required]
+    public string Role { get; set; } = string.Empty;
 }
