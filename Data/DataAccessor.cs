@@ -1468,6 +1468,7 @@ public class DataAccessor(
                 Title = promotion.Title,
                 Slug = promotion.Slug,
                 BannerImageUrl = promotion.BannerImageUrl,
+                CardImageUrl = promotion.CardImageUrl,
                 SortOrder = promotion.SortOrder,
                 DiscountType = promotion.DiscountType,
                 DiscountValue = promotion.DiscountValue,
@@ -1481,6 +1482,9 @@ public class DataAccessor(
         {
             promotion.BannerImageUrl =
                 BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.CardImageUrl =
+                BuildPromotionImageUrl(promotion.CardImageUrl);
         }
 
         return promotions;
@@ -1505,6 +1509,7 @@ public class DataAccessor(
                 Slug = promotion.Slug,
                 Description = promotion.Description,
                 BannerImageUrl = promotion.BannerImageUrl,
+                CardImageUrl = promotion.CardImageUrl,
                 ImageUrl = promotion.ImageUrl,
                 StartDate = promotion.StartDate,
                 EndDate = promotion.EndDate,
@@ -1520,6 +1525,9 @@ public class DataAccessor(
         {
             promotion.BannerImageUrl =
                 BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.CardImageUrl =
+                BuildPromotionImageUrl(promotion.CardImageUrl);
 
             promotion.ImageUrl =
                 BuildPromotionImageUrl(promotion.ImageUrl);
@@ -1549,6 +1557,7 @@ public class DataAccessor(
                 Slug = promotion.Slug,
                 Description = promotion.Description,
                 BannerImageUrl = promotion.BannerImageUrl,
+                CardImageUrl = promotion.CardImageUrl,
                 ImageUrl = promotion.ImageUrl,
                 StartDate = promotion.StartDate,
                 EndDate = promotion.EndDate,
@@ -1564,6 +1573,9 @@ public class DataAccessor(
         {
             promotion.BannerImageUrl =
                 BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.CardImageUrl =
+                BuildPromotionImageUrl(promotion.CardImageUrl);
 
             promotion.ImageUrl =
                 BuildPromotionImageUrl(promotion.ImageUrl);
@@ -1584,6 +1596,7 @@ public class DataAccessor(
                 Slug = promotion.Slug,
                 Description = promotion.Description,
                 BannerImageUrl = promotion.BannerImageUrl,
+                CardImageUrl = promotion.CardImageUrl,
                 ImageUrl = promotion.ImageUrl,
                 StartDate = promotion.StartDate,
                 EndDate = promotion.EndDate,
@@ -1604,6 +1617,9 @@ public class DataAccessor(
             promotion.BannerImageUrl =
                 BuildPromotionImageUrl(promotion.BannerImageUrl);
 
+            promotion.CardImageUrl =
+                BuildPromotionImageUrl(promotion.CardImageUrl);
+
             promotion.ImageUrl =
                 BuildPromotionImageUrl(promotion.ImageUrl);
         }
@@ -1622,6 +1638,7 @@ public class DataAccessor(
                 Slug = promotion.Slug,
                 Description = promotion.Description,
                 BannerImageUrl = promotion.BannerImageUrl,
+                CardImageUrl = promotion.CardImageUrl,
                 ImageUrl = promotion.ImageUrl,
                 StartDate = promotion.StartDate,
                 EndDate = promotion.EndDate,
@@ -1641,6 +1658,9 @@ public class DataAccessor(
         {
             promotion.BannerImageUrl =
                 BuildPromotionImageUrl(promotion.BannerImageUrl);
+
+            promotion.CardImageUrl =
+                BuildPromotionImageUrl(promotion.CardImageUrl);
 
             promotion.ImageUrl =
                 BuildPromotionImageUrl(promotion.ImageUrl);
@@ -1799,7 +1819,7 @@ public class DataAccessor(
     public async Task<(bool Updated, string? PreviousImageKey)> SetPromotionImageAsync(
         Guid promotionId,
         string imageKey,
-        bool isBanner,
+        PromotionImageType imageType,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(imageKey))
@@ -1819,17 +1839,30 @@ public class DataAccessor(
             return (false, null);
         }
 
-        var previousImageKey = isBanner
-            ? promotion.BannerImageUrl
-            : promotion.ImageUrl;
+        var previousImageKey = imageType switch
+        {
+            PromotionImageType.Banner => promotion.BannerImageUrl,
+            PromotionImageType.Card => promotion.CardImageUrl,
+            PromotionImageType.Details => promotion.ImageUrl,
+            _ => throw new ArgumentOutOfRangeException(nameof(imageType))
+        };
 
-        if (isBanner)
+        switch (imageType)
         {
-            promotion.BannerImageUrl = imageKey.Trim();
-        }
-        else
-        {
-            promotion.ImageUrl = imageKey.Trim();
+            case PromotionImageType.Banner:
+                promotion.BannerImageUrl = imageKey.Trim();
+                break;
+
+            case PromotionImageType.Card:
+                promotion.CardImageUrl = imageKey.Trim();
+                break;
+
+            case PromotionImageType.Details:
+                promotion.ImageUrl = imageKey.Trim();
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(imageType));
         }
 
         promotion.UpdatedAt = DateTime.UtcNow;

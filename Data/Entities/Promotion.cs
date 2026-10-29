@@ -12,6 +12,8 @@ public class Promotion
 
     public string? BannerImageUrl { get; set; }
 
+    public string? CardImageUrl { get; set; }
+
     public string? ImageUrl { get; set; }
 
     public PromotionDiscountType? DiscountType { get; set; }

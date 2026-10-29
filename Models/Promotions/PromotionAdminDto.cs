@@ -14,6 +14,7 @@ public class PromotionAdminDto
     public decimal? DiscountValue { get; set; }
     public List<Guid> ProductIds { get; set; } = [];
     public string? BannerImageUrl { get; set; }
+    public string? CardImageUrl { get; set; }
     public string? ImageUrl { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }

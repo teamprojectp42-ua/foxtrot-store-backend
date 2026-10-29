@@ -179,6 +179,9 @@ public class DataContext(DbContextOptions<DataContext> options)
 
             entity.Property(promotion => promotion.DiscountValue)
                 .HasPrecision(18, 2);
+
+            entity.Property(promotion => promotion.CardImageUrl)
+                .HasMaxLength(2048);
         });
 
         modelBuilder.Entity<PromotionProduct>(entity =>

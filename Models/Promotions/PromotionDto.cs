@@ -20,5 +20,7 @@ public class PromotionDto
 
     public string? BannerImageUrl { get; set; }
 
+    public string? CardImageUrl { get; set; }
+
     public int SortOrder { get; set; }
 }

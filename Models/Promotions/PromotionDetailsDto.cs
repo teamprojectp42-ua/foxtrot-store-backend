@@ -22,6 +22,8 @@ public class PromotionDetailsDto
 
     public string? BannerImageUrl { get; set; }
 
+    public string? CardImageUrl { get; set; }
+
     public string? ImageUrl { get; set; }
 
     public DateTime? StartDate { get; set; }

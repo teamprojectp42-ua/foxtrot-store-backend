@@ -1,9 +1,10 @@
 ﻿using foxtrot_store_backend.Data;
+using foxtrot_store_backend.Data.Entities;
 using foxtrot_store_backend.Models.Promotions;
 using foxtrot_store_backend.Models.Rest;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
 using foxtrot_store_backend.Services.LocalStorage;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -213,7 +214,7 @@ public class PromotionsController(
         return SavePromotionImageAsync(
             id,
             file,
-            isBanner: false,
+            PromotionImageType.Details,
             cancellationToken);
     }
 
@@ -228,7 +229,22 @@ public class PromotionsController(
         return SavePromotionImageAsync(
             id,
             file,
-            isBanner: true,
+            PromotionImageType.Banner,
+            cancellationToken);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{id:guid}/card-image")]
+    [Consumes("multipart/form-data")]
+    public Task<IActionResult> UploadPromotionCardImage(
+    Guid id,
+    [FromForm] IFormFile? file,
+    CancellationToken cancellationToken)
+    {
+        return SavePromotionImageAsync(
+            id,
+            file,
+            PromotionImageType.Card,
             cancellationToken);
     }
 
@@ -292,12 +308,18 @@ public class PromotionsController(
         };
     }
     private async Task<IActionResult> SavePromotionImageAsync(
-    Guid id,
-    IFormFile? file,
-    bool isBanner,
-    CancellationToken cancellationToken)
+        Guid id,
+        IFormFile? file,
+        PromotionImageType imageType,
+        CancellationToken cancellationToken)
     {
-        var imageName = isBanner ? "banner" : "image";
+        var imageName = imageType switch
+        {
+            PromotionImageType.Banner => "banner",
+            PromotionImageType.Card => "card image",
+            PromotionImageType.Details => "image",
+            _ => throw new ArgumentOutOfRangeException(nameof(imageType))
+        };
 
         if (file is null || file.Length == 0)
         {
@@ -334,7 +356,7 @@ public class PromotionsController(
             result = await _dataAccessor.SetPromotionImageAsync(
                 id,
                 imageKey,
-                isBanner,
+                imageType,
                 cancellationToken);
 
             if (!result.Updated)
@@ -348,7 +370,6 @@ public class PromotionsController(
         }
         catch
         {
-            // Clean up the new file if database persistence fails.
             await TryDeletePromotionImageAsync(imageKey);
             throw;
         }
@@ -360,17 +381,24 @@ public class PromotionsController(
                 StringComparison.Ordinal) &&
             IsLocalStoragePromotionImageKey(result.PreviousImageKey))
         {
-            // The database now references the new file.
             await TryDeletePromotionImageAsync(result.PreviousImageKey);
         }
 
         var imageUrl = $"/api/promotions/images/{imageKey}";
 
+        var responseField = imageType switch
+        {
+            PromotionImageType.Banner => "bannerImageUrl",
+            PromotionImageType.Card => "cardImageUrl",
+            PromotionImageType.Details => "imageUrl",
+            _ => throw new ArgumentOutOfRangeException(nameof(imageType))
+        };
+
         var data = new Dictionary<string, object>
         {
             ["promotionId"] = id,
             ["imageKey"] = imageKey,
-            [isBanner ? "bannerImageUrl" : "imageUrl"] = imageUrl
+            [responseField] = imageUrl
         };
 
         return Ok(new RestResponse
