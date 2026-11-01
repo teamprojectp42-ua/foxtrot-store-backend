@@ -9,15 +9,21 @@ public class DataContext(DbContextOptions<DataContext> options)
     : IdentityDbContext<IdentityUser>(options)
 {
     public DbSet<Product> Products => Set<Product>();
-    public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductSpecification> ProductSpecifications
         => Set<ProductSpecification>();
+    
+    public DbSet<Category> Categories => Set<Category>();
+
     public DbSet<Promotion> Promotions => Set<Promotion>();
     public DbSet<PromotionProduct> PromotionProducts
-    => Set<PromotionProduct>();
+        => Set<PromotionProduct>();
+
     public DbSet<Brand> Brands => Set<Brand>();
+
+    public DbSet<Cart> Carts => Set<Cart>();
+    public DbSet<CartItem> CartItems => Set<CartItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -204,5 +210,65 @@ public class DataContext(DbContextOptions<DataContext> options)
                 .HasForeignKey(pp => pp.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<Cart>(entity =>
+        {
+            entity.HasKey(cart => cart.Id);
+
+            entity.Property(cart => cart.UserId)
+                .HasMaxLength(255)
+                .IsRequired();
+
+            // A user can have only one cart.
+            entity.HasIndex(cart => cart.UserId)
+                .IsUnique();
+
+            // Deleting a user also deletes their cart.
+            entity.HasOne(cart => cart.User)
+                .WithOne()
+                .HasForeignKey<Cart>(cart => cart.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CartItem>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+
+            entity.Property(item => item.Quantity)
+                .IsRequired();
+
+            // Prevent duplicate products inside one cart.
+            entity.HasIndex(item => new
+            {
+                item.CartId,
+                item.ProductId
+            })
+            .IsUnique();
+
+            // Useful for finding carts containing a product.
+            entity.HasIndex(item => item.ProductId);
+
+            // Quantity must always be positive.
+            entity.ToTable(table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_CartItems_Quantity_Positive",
+                    "`Quantity` > 0");
+            });
+
+            // Deleting a cart also deletes its items.
+            entity.HasOne(item => item.Cart)
+                .WithMany(cart => cart.Items)
+                .HasForeignKey(item => item.CartId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // A product cannot be physically deleted while
+            // it is referenced by a cart item.
+            entity.HasOne(item => item.Product)
+                .WithMany()
+                .HasForeignKey(item => item.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
     }
 }

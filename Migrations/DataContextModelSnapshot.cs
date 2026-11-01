@@ -246,6 +246,59 @@ namespace foxtrot_store_backend.Migrations
                     b.ToTable("Brands");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Cart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("Carts");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.CartItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("CartId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("CartId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("CartItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_CartItems_Quantity_Positive", "`Quantity` > 0");
+                        });
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -549,6 +602,36 @@ namespace foxtrot_store_backend.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Cart", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", "User")
+                        .WithOne()
+                        .HasForeignKey("foxtrot_store_backend.Data.Entities.Cart", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.CartItem", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Cart", "Cart")
+                        .WithMany("Items")
+                        .HasForeignKey("CartId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Cart");
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>
                 {
                     b.HasOne("foxtrot_store_backend.Data.Entities.Category", "ParentCategory")
@@ -632,6 +715,11 @@ namespace foxtrot_store_backend.Migrations
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Brand", b =>
                 {
                     b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Cart", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Category", b =>

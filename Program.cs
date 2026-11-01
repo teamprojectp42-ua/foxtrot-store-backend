@@ -113,7 +113,6 @@ using (var scope = app.Services.CreateScope())
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
 
@@ -125,10 +124,5 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapStaticAssets();
 app.MapControllers();
-
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}")
-    .WithStaticAssets();
 
 app.Run();

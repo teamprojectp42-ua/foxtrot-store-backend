@@ -1,12 +1,13 @@
-﻿using foxtrot_store_backend.Data.Entities;
+﻿using foxtrot_store_backend.Constants;
+using foxtrot_store_backend.Data.Entities;
+using foxtrot_store_backend.Models.Auth;
 using foxtrot_store_backend.Models.Brands;
+using foxtrot_store_backend.Models.Cart;
 using foxtrot_store_backend.Models.Categories;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Promotions;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
-using foxtrot_store_backend.Models.Auth;
-using foxtrot_store_backend.Constants;
+using Microsoft.EntityFrameworkCore;
 using MySql.Data.MySqlClient;
 
 namespace foxtrot_store_backend.Data;
@@ -2943,6 +2944,455 @@ public class DataAccessor(
         }
     }
     #endregion
+
+    // CART
+
+    public async Task<CartResponseDto> GetCartAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException(
+                "User ID is required.",
+                nameof(userId));
+        }
+
+        var cartItems = await _dataContext.CartItems
+            .AsNoTracking()
+            .Where(item => item.Cart.UserId == userId)
+            .Include(item => item.Product)
+            .OrderBy(item => item.Product.Name)
+            .ThenBy(item => item.Id)
+            .ToListAsync(cancellationToken);
+
+        return await BuildCartResponseAsync(cartItems);
+    }
+
+    public async Task<CartResponseDto> AddCartItemAsync(
+        string userId,
+        Guid productId,
+        int quantity,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException(
+                "User ID is required.",
+                nameof(userId));
+        }
+
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantity),
+                "Quantity must be greater than zero.");
+        }
+
+        // Validate the product before creating a cart.
+        var initialProduct = await _dataContext.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                product => product.Id == productId,
+                cancellationToken);
+
+        ValidateCartProduct(initialProduct, quantity);
+
+        // Create a cart only when the user actually adds a product.
+        await GetOrCreateCartAsync(userId, cancellationToken);
+
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        // Lock the cart row to serialize modifications
+        // made by concurrent requests for the same user.
+        var cart = await GetCartForUpdateAsync(
+            userId,
+            cancellationToken);
+
+        if (cart is null)
+        {
+            throw new InvalidOperationException(
+                "The user's cart could not be retrieved.");
+        }
+
+        // Lock and re-read the product to obtain its current stock.
+        var product = await GetProductForUpdateAsync(
+            productId,
+            cancellationToken);
+
+        ValidateCartProduct(product, quantity);
+
+        var existingItem = await _dataContext.CartItems
+            .FirstOrDefaultAsync(
+                item =>
+                    item.CartId == cart.Id &&
+                    item.ProductId == productId,
+                cancellationToken);
+
+        var currentQuantity = existingItem?.Quantity ?? 0;
+
+        var newQuantity = (long)currentQuantity + quantity;
+
+        if (newQuantity > product!.StockQuantity)
+        {
+            throw new InvalidOperationException(
+                $"Only {product.StockQuantity} units are currently " +
+                "available in stock. The requested quantity exceeds " +
+                "the available stock.");
+        }
+
+        if (existingItem is not null)
+        {
+            existingItem.Quantity = (int)newQuantity;
+        }
+        else
+        {
+            _dataContext.CartItems.Add(new CartItem
+            {
+                Id = Guid.NewGuid(),
+                CartId = cart.Id,
+                ProductId = productId,
+                Quantity = quantity
+            });
+        }
+
+        cart.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return await GetCartAsync(userId, cancellationToken);
+    }
+    public async Task<CartResponseDto?> UpdateCartItemQuantityAsync(
+        string userId,
+        Guid productId,
+        int quantity,
+        CancellationToken cancellationToken = default)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(quantity),
+                "Quantity must be greater than zero.");
+        }
+
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        var cart = await GetCartForUpdateAsync(
+            userId,
+            cancellationToken);
+
+        if (cart is null)
+        {
+            return null;
+        }
+
+        var item = await _dataContext.CartItems
+            .FirstOrDefaultAsync(
+                existing =>
+                    existing.CartId == cart.Id &&
+                    existing.ProductId == productId,
+                cancellationToken);
+
+        if (item is null)
+        {
+            return null;
+        }
+
+        var product = await GetProductForUpdateAsync(
+            productId,
+            cancellationToken);
+
+        ValidateCartProduct(product, quantity);
+
+        item.Quantity = quantity;
+
+        cart.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return await GetCartAsync(userId, cancellationToken);
+    }
+    public async Task<CartResponseDto?> RemoveCartItemAsync(
+        string userId,
+        Guid productId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        var cart = await GetCartForUpdateAsync(
+            userId,
+            cancellationToken);
+
+        if (cart is null)
+        {
+            return null;
+        }
+
+        var item = await _dataContext.CartItems
+            .FirstOrDefaultAsync(
+                existing =>
+                    existing.CartId == cart.Id &&
+                    existing.ProductId == productId,
+                cancellationToken);
+
+        if (item is null)
+        {
+            return null;
+        }
+
+        _dataContext.CartItems.Remove(item);
+
+        cart.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return await GetCartAsync(userId, cancellationToken);
+    }
+    public async Task<CartResponseDto> ClearCartAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        var cart = await GetCartForUpdateAsync(
+            userId,
+            cancellationToken);
+
+        if (cart is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+
+            return new CartResponseDto();
+        }
+
+        var items = await _dataContext.CartItems
+            .Where(item => item.CartId == cart.Id)
+            .ToListAsync(cancellationToken);
+
+        if (items.Count > 0)
+        {
+            _dataContext.CartItems.RemoveRange(items);
+
+            cart.UpdatedAt = DateTime.UtcNow;
+
+            await _dataContext.SaveChangesAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new CartResponseDto();
+    }
+
+
+    private async Task<Cart> GetOrCreateCartAsync(
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var existingCart = await _dataContext.Carts
+            .FirstOrDefaultAsync(
+                cart => cart.UserId == userId,
+                cancellationToken);
+
+        if (existingCart is not null)
+        {
+            return existingCart;
+        }
+
+        var cart = new Cart
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _dataContext.Carts.Add(cart);
+
+        try
+        {
+            await _dataContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+            when (IsDuplicateKeyViolation(exception))
+        {
+            // Another concurrent request may have created
+            // the cart for this user first.
+            _dataContext.Entry(cart).State = EntityState.Detached;
+
+            var concurrentlyCreatedCart =
+                await _dataContext.Carts.FirstOrDefaultAsync(
+                    existing => existing.UserId == userId,
+                    cancellationToken);
+
+            if (concurrentlyCreatedCart is null)
+            {
+                throw new InvalidOperationException(
+                    "The user's cart could not be created.",
+                    exception);
+            }
+
+            return concurrentlyCreatedCart;
+        }
+
+        return cart;
+    }
+    private async Task<Product?> GetProductForUpdateAsync(
+        Guid productId,
+        CancellationToken cancellationToken)
+    {
+        var products = await _dataContext.Products
+            .FromSqlInterpolated(
+                $"SELECT * FROM `Products` WHERE `Id` = {productId} FOR UPDATE")
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return products.SingleOrDefault();
+    }
+    private async Task<Cart?> GetCartForUpdateAsync(
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var carts = await _dataContext.Carts
+            .FromSqlInterpolated(
+                $"SELECT * FROM `Carts` WHERE `UserId` = {userId} FOR UPDATE")
+            .AsTracking()
+            .ToListAsync(cancellationToken);
+
+        return carts.SingleOrDefault();
+    }
+    private static void ValidateCartProduct(
+        Product? product,
+        int quantity)
+    {
+        if (product is null)
+        {
+            throw new KeyNotFoundException(
+                "Product not found.");
+        }
+
+        if (!product.IsActive)
+        {
+            throw new InvalidOperationException(
+                "The product is inactive and cannot be purchased.");
+        }
+
+        if (product.StockQuantity <= 0)
+        {
+            throw new InvalidOperationException(
+                "The product is out of stock.");
+        }
+
+        if (quantity > product.StockQuantity)
+        {
+            throw new InvalidOperationException(
+                $"Only {product.StockQuantity} units are currently available.");
+        }
+    }
+    private async Task<CartResponseDto> BuildCartResponseAsync(
+        List<CartItem> cartItems)
+    {
+        var productIds = cartItems
+            .Select(item => item.ProductId)
+            .Distinct()
+            .ToList();
+
+        var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+            productIds);
+
+        var responseItems = new List<CartItemDto>();
+
+        foreach (var item in cartItems)
+        {
+            var product = item.Product;
+
+            var promotion = CalculateBestPromotionPrice(
+                product.Price,
+                promotionDiscounts.GetValueOrDefault(product.Id));
+
+            var stockQuantity = Math.Max(
+                product.StockQuantity,
+                0);
+
+            var availableQuantity = product.IsActive
+                ? Math.Min(item.Quantity, stockQuantity)
+                : 0;
+
+            var availabilityStatus = !product.IsActive
+                ? "Inactive"
+                : stockQuantity == 0
+                    ? "OutOfStock"
+                    : item.Quantity > stockQuantity
+                        ? "InsufficientStock"
+                        : "Available";
+
+            var unitPrice = promotion?.DiscountedPrice
+                ?? product.Price;
+
+            var lineTotal = decimal.Round(
+                unitPrice * availableQuantity,
+                2,
+                MidpointRounding.AwayFromZero);
+
+            responseItems.Add(new CartItemDto
+            {
+                Id = item.Id,
+                ProductId = product.Id,
+                Sku = product.Sku,
+                ProductName = product.Name,
+
+                OriginalUnitPrice = product.Price,
+                UnitPrice = unitPrice,
+
+                ActivePromotion = promotion,
+
+                RequestedQuantity = item.Quantity,
+                AvailableQuantity = availableQuantity,
+                StockQuantity = stockQuantity,
+
+                IsProductActive = product.IsActive,
+                IsAvailable = availableQuantity > 0,
+
+                IsQuantityAdjusted =
+                    item.Quantity != availableQuantity,
+
+                AvailabilityStatus = availabilityStatus,
+
+                LineTotal = lineTotal
+            });
+        }
+
+        var totalAmount = decimal.Round(
+            responseItems.Sum(item => item.LineTotal),
+            2,
+            MidpointRounding.AwayFromZero);
+
+        return new CartResponseDto
+        {
+            Items = responseItems,
+
+            TotalAvailableQuantity = responseItems.Sum(
+                item => item.AvailableQuantity),
+
+            TotalAmount = totalAmount
+        };
+    }
+
+
+
 
 
 
