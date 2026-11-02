@@ -346,6 +346,7 @@ public class AuthController(
         var hasConflict = result.Errors.Any(error =>
             error.Code is "DuplicateUserName"
                 or "DuplicateEmail"
+                or "UserHasOrders"
                 or "LastAdmin");
 
         if (hasConflict)

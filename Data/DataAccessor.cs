@@ -2906,6 +2906,18 @@ public class DataAccessor(
             }
         }
 
+        var hasOrders = await _dataContext.Orders
+            .AnyAsync(order => order.UserId == id);
+
+        if (hasOrders)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "UserHasOrders",
+                Description = "Cannot delete a user who has existing orders."
+            });
+        }
+
         return await _userManager.DeleteAsync(user);
     }
     private async Task<UserDto> MapUserAsync(IdentityUser user)
