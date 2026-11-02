@@ -238,3 +238,4 @@ Authorization: Bearer {{userToken}}
 6. Перевірте `DELETE /api/cart/items/{productId}` і `DELETE /api/cart`.
 7. Перевірте випадки неіснуючого, неактивного товару та недостатнього залишку.
 8. Спробуйте викликати endpoint кошика без токена та з ролями `Manager` і `Admin`; очікується відмова в доступі.
+ 
