@@ -4,6 +4,7 @@ using foxtrot_store_backend.Models.Auth;
 using foxtrot_store_backend.Models.Brands;
 using foxtrot_store_backend.Models.Cart;
 using foxtrot_store_backend.Models.Categories;
+using foxtrot_store_backend.Models.Orders;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Promotions;
 using Microsoft.AspNetCore.Identity;
@@ -2672,10 +2673,10 @@ public class DataAccessor(
         return await _userManager.FindByIdAsync(id);
     }
     public async Task<(IdentityUser? User, IdentityResult Result)> CreateUserAsync(
-    string userName,
-    string email,
-    string password,
-    string? role = null)
+        string userName,
+        string email,
+        string password,
+        string? role = null)
     {
         var selectedRole = string.IsNullOrWhiteSpace(role)
             ? AppRoles.User
@@ -2686,7 +2687,7 @@ public class DataAccessor(
             return (null, IdentityResult.Failed(new IdentityError
             {
                 Code = "InvalidRole",
-                Description = "Допустимые роли: User или Admin."
+                Description = "Допустимые роли: User, Manager или Admin."
             }));
         }
 
@@ -2764,7 +2765,7 @@ public class DataAccessor(
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "InvalidRole",
-                Description = "Укажите роль User или Admin."
+                Description = "Укажите роль User, Manager или Admin."
             });
         }
 
@@ -2776,7 +2777,7 @@ public class DataAccessor(
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "InvalidRole",
-                Description = "Допустимые роли: User или Admin."
+                Description = "Допустимые роли: User, Manager или Admin."
             });
         }
 
@@ -3390,6 +3391,419 @@ public class DataAccessor(
             TotalAmount = totalAmount
         };
     }
+
+    // Order
+
+    public async Task<IReadOnlyList<OrderDto>> GetMyOrdersAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException(
+                "User ID is required.",
+                nameof(userId));
+        }
+
+        var orders = await _dataContext.Orders
+            .AsNoTracking()
+            .Where(order => order.UserId == userId)
+            .Include(order => order.Items)
+            .OrderByDescending(order => order.CreatedAt)
+            .ThenByDescending(order => order.Id)
+            .ToListAsync(cancellationToken);
+
+        return orders
+            .Select(MapOrderToDto)
+            .ToList();
+    }
+    public async Task<IReadOnlyList<OrderDto>> GetAllOrdersAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var orders = await _dataContext.Orders
+            .AsNoTracking()
+            .Include(order => order.Items)
+            .OrderByDescending(order => order.CreatedAt)
+            .ThenByDescending(order => order.Id)
+            .ToListAsync(cancellationToken);
+
+        return orders
+            .Select(MapOrderToDto)
+            .ToList();
+    }
+    public async Task<OrderDto> CreateOrderAsync(
+        string userId,
+        CreateOrderRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new ArgumentException(
+                "User ID is required.",
+                nameof(userId));
+        }
+
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.FullName) ||
+            string.IsNullOrWhiteSpace(request.PhoneNumber) ||
+            string.IsNullOrWhiteSpace(request.City) ||
+            string.IsNullOrWhiteSpace(request.DeliveryAddress))
+        {
+            throw new ArgumentException(
+                "All required delivery fields must be provided.");
+        }
+
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        // Lock the user's cart to prevent concurrent modifications.
+        var cart = await GetCartForUpdateAsync(
+            userId,
+            cancellationToken);
+
+        if (cart is null)
+        {
+            throw new InvalidOperationException(
+                "Your cart is empty.");
+        }
+
+        var cartItems = await _dataContext.CartItems
+            .Where(item => item.CartId == cart.Id)
+            .OrderBy(item => item.ProductId)
+            .ToListAsync(cancellationToken);
+
+        if (cartItems.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Your cart is empty.");
+        }
+
+        // Lock all products in a consistent order.
+        // This reduces the risk of deadlocks between concurrent checkouts.
+        var products = new Dictionary<Guid, Product>();
+
+        foreach (var productId in cartItems
+            .Select(item => item.ProductId)
+            .Distinct()
+            .OrderBy(id => id))
+        {
+            var product = await GetProductForOrderUpdateAsync(
+                productId,
+                cancellationToken);
+
+            if (product is null)
+            {
+                throw new InvalidOperationException(
+                    "One or more products in your cart no longer exist.");
+            }
+
+            products.Add(productId, product);
+        }
+
+        // Revalidate products and stock immediately before purchase.
+        foreach (var item in cartItems)
+        {
+            var product = products[item.ProductId];
+
+            if (!product.IsActive)
+            {
+                throw new InvalidOperationException(
+                    $"Product '{product.Name}' is inactive.");
+            }
+
+            if (product.StockQuantity < item.Quantity)
+            {
+                throw new InvalidOperationException(
+                    $"Insufficient stock for '{product.Name}'. " +
+                    $"Requested: {item.Quantity}. " +
+                    $"Available: {product.StockQuantity}. " +
+                    "Please update your cart.");
+            }
+        }
+
+        // Retrieve current promotions using the existing discount logic.
+        var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+            products.Keys);
+
+        var now = DateTime.UtcNow;
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            CustomerName = request.FullName.Trim(),
+            PhoneNumber = request.PhoneNumber.Trim(),
+            City = request.City.Trim(),
+            DeliveryAddress = request.DeliveryAddress.Trim(),
+            Comment = string.IsNullOrWhiteSpace(request.Comment)
+                ? null
+                : request.Comment.Trim(),
+            Status = OrderStatus.New,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        foreach (var cartItem in cartItems)
+        {
+            var product = products[cartItem.ProductId];
+
+            var promotion = CalculateBestPromotionPrice(
+                product.Price,
+                promotionDiscounts.GetValueOrDefault(product.Id));
+
+            // Store the final price, including the active discount.
+            var unitPrice = promotion?.DiscountedPrice
+                ?? product.Price;
+
+            var lineTotal = decimal.Round(
+                unitPrice * cartItem.Quantity,
+                2,
+                MidpointRounding.AwayFromZero);
+
+            order.Items.Add(new OrderItem
+            {
+                Id = Guid.NewGuid(),
+                OrderId = order.Id,
+                ProductId = product.Id,
+                ProductName = product.Name,
+                ProductSku = product.Sku,
+                UnitPrice = unitPrice,
+                Quantity = cartItem.Quantity,
+                TotalPrice = lineTotal
+            });
+
+            // Reserve the purchased quantity by decreasing stock.
+            product.StockQuantity -= cartItem.Quantity;
+            product.UpdatedAt = now;
+        }
+
+        order.TotalAmount = decimal.Round(
+            order.Items.Sum(item => item.TotalPrice),
+            2,
+            MidpointRounding.AwayFromZero);
+
+        _dataContext.Orders.Add(order);
+
+        // Clear the cart only as part of the same transaction.
+        _dataContext.CartItems.RemoveRange(cartItems);
+
+        cart.UpdatedAt = now;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return MapOrderToDto(order);
+    }
+    public async Task<OrderDto?> UpdateOrderStatusAsync(
+        Guid orderId,
+        OrderStatus newStatus,
+        CancellationToken cancellationToken = default)
+    {
+        if (orderId == Guid.Empty)
+        {
+            throw new ArgumentException(
+                "Order ID cannot be empty.",
+                nameof(orderId));
+        }
+
+        if (!Enum.IsDefined(newStatus))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(newStatus),
+                "Invalid order status.");
+        }
+
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync(
+                cancellationToken);
+
+        // Lock the order to prevent concurrent status changes.
+        var order = await GetOrderForUpdateAsync(
+            orderId,
+            cancellationToken);
+
+        if (order is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+
+        // Repeating the same status must not repeat side effects.
+        if (order.Status == newStatus)
+        {
+            await transaction.CommitAsync(cancellationToken);
+
+            return await GetOrderByIdAsync(
+                orderId,
+                cancellationToken);
+        }
+
+        if (!CanChangeOrderStatus(order.Status, newStatus))
+        {
+            throw new InvalidOperationException(
+                $"Order status cannot be changed from " +
+                $"'{order.Status}' to '{newStatus}'.");
+        }
+
+        if (newStatus == OrderStatus.Cancelled)
+        {
+            var orderItems = await _dataContext.OrderItems
+                .Where(item => item.OrderId == orderId)
+                .OrderBy(item => item.ProductId)
+                .ToListAsync(cancellationToken);
+
+            // Lock all products in a consistent order.
+            var products = new Dictionary<Guid, Product>();
+
+            foreach (var productId in orderItems
+                .Select(item => item.ProductId)
+                .Distinct()
+                .OrderBy(id => id))
+            {
+                var product = await GetProductForOrderUpdateAsync(
+                    productId,
+                    cancellationToken);
+
+                if (product is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Product '{productId}' referenced by the order " +
+                        "could not be found.");
+                }
+
+                products.Add(productId, product);
+            }
+
+            var now = DateTime.UtcNow;
+
+            // Restore the quantities reserved by this order.
+            foreach (var item in orderItems)
+            {
+                var product = products[item.ProductId];
+
+                var restoredStock =
+                    (long)product.StockQuantity + item.Quantity;
+
+                if (restoredStock > int.MaxValue)
+                {
+                    throw new InvalidOperationException(
+                        $"Restoring stock for '{product.Name}' " +
+                        "would exceed the maximum supported quantity.");
+                }
+
+                product.StockQuantity = (int)restoredStock;
+                product.UpdatedAt = now;
+            }
+        }
+
+        order.Status = newStatus;
+        order.UpdatedAt = DateTime.UtcNow;
+
+        await _dataContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return await GetOrderByIdAsync(
+            orderId,
+            cancellationToken);
+    }
+
+
+
+    public async Task<OrderDto?> GetOrderByIdAsync(
+        Guid orderId,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await _dataContext.Orders
+            .AsNoTracking()
+            .Include(order => order.Items)
+            .FirstOrDefaultAsync(
+                order => order.Id == orderId,
+                cancellationToken);
+
+        return order is null
+            ? null
+            : MapOrderToDto(order);
+    }
+    private async Task<Order?> GetOrderForUpdateAsync(
+        Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        var orders = await _dataContext.Orders
+            .FromSqlInterpolated(
+                $"SELECT * FROM `Orders` WHERE `Id` = {orderId} FOR UPDATE")
+            .AsTracking()
+            .ToListAsync(cancellationToken);
+
+        return orders.SingleOrDefault();
+    }
+    private static bool CanChangeOrderStatus(
+        OrderStatus currentStatus,
+        OrderStatus newStatus)
+    {
+        return currentStatus switch
+        {
+            OrderStatus.New =>
+                newStatus is OrderStatus.Processing
+                    or OrderStatus.Cancelled,
+
+            OrderStatus.Processing =>
+                newStatus is OrderStatus.Completed
+                    or OrderStatus.Cancelled,
+
+            OrderStatus.Completed => false,
+
+            OrderStatus.Cancelled => false,
+
+            _ => false
+        };
+    }
+    private async Task<Product?> GetProductForOrderUpdateAsync(
+        Guid productId,
+        CancellationToken cancellationToken)
+    {
+        var products = await _dataContext.Products
+            .FromSqlInterpolated(
+                $"SELECT * FROM `Products` WHERE `Id` = {productId} FOR UPDATE")
+            .AsTracking()
+            .ToListAsync(cancellationToken);
+
+        return products.SingleOrDefault();
+    }
+    private static OrderDto MapOrderToDto(Order order)
+    {
+        return new OrderDto
+        {
+            Id = order.Id,
+            CustomerName = order.CustomerName,
+            PhoneNumber = order.PhoneNumber,
+            City = order.City,
+            DeliveryAddress = order.DeliveryAddress,
+            Comment = order.Comment,
+            TotalAmount = order.TotalAmount,
+            Status = order.Status.ToString(),
+            CreatedAt = order.CreatedAt,
+            UpdatedAt = order.UpdatedAt,
+
+            Items = order.Items
+                .Select(item => new OrderItemDto
+                {
+                    Id = item.Id,
+                    ProductId = item.ProductId,
+                    ProductName = item.ProductName,
+                    ProductSku = item.ProductSku,
+                    UnitPrice = item.UnitPrice,
+                    Quantity = item.Quantity,
+                    TotalPrice = item.TotalPrice
+                })
+                .ToList()
+        };
+    }
+
+
 
 
 

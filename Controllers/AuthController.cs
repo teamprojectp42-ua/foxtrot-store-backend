@@ -231,8 +231,8 @@ public class AuthController(
     [HttpPut("users/{id}/role")]
     [Authorize(Roles = AppRoles.Admin)]
     public async Task<IActionResult> UpdateUserRole(
-    string id,
-    UpdateUserRoleRequest request)
+        string id,
+        UpdateUserRoleRequest request)
     {
         var result = await dataAccessor.UpdateUserRoleAsync(
             id,
