@@ -10,6 +10,8 @@ using foxtrot_store_backend.Models.Promotions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MySql.Data.MySqlClient;
+using System.Globalization;
+using foxtrot_store_backend.Models.Products.Translations;
 
 namespace foxtrot_store_backend.Data;
 
@@ -254,8 +256,32 @@ public class DataAccessor(
         return (true, imageKey);
     }
     public async Task<ProductCatalogResponseDto> GetProductsAsync(
-        ProductCatalogQuery query)
+        ProductCatalogQuery query,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        if (query is null)
+        {
+            throw new ArgumentNullException(nameof(query));
+        }
+
+        var sortBy = string.IsNullOrWhiteSpace(query.SortBy)
+            ? "name"
+            : query.SortBy.Trim().ToLowerInvariant();
+
+        var sortDirection = string.IsNullOrWhiteSpace(query.SortDirection)
+            ? "asc"
+            : query.SortDirection.Trim().ToLowerInvariant();
+
+        if (query.MinPrice.HasValue &&
+            query.MaxPrice.HasValue &&
+            query.MinPrice.Value > query.MaxPrice.Value)
+        {
+            throw new ArgumentException(
+                "MinPrice cannot be greater than MaxPrice.");
+        }
+
         if (query.Page < 1)
         {
             throw new ArgumentOutOfRangeException(
@@ -290,9 +316,21 @@ public class DataAccessor(
             var search = query.Search.Trim();
 
             products = products.Where(product =>
-                product.Name.Contains(search) ||
                 product.Sku.Contains(search) ||
-                product.Description.Contains(search));
+
+                product.Translations.Any(translation =>
+                    translation.CultureCode == cultureCode &&
+                    (
+                        translation.Name.Contains(search) ||
+                        translation.Description.Contains(search)
+                    )) ||
+
+                product.Translations.Any(translation =>
+                    translation.CultureCode == DefaultCultureCode &&
+                    (
+                        translation.Name.Contains(search) ||
+                        translation.Description.Contains(search)
+                    )));
         }
 
         if (query.MinPrice.HasValue)
@@ -334,10 +372,7 @@ public class DataAccessor(
                 product.StockQuantity <= 0);
         }
 
-        products = (
-            query.SortBy.ToLowerInvariant(),
-            query.SortDirection.ToLowerInvariant()
-        ) switch
+        products = (sortBy, sortDirection) switch
         {
             ("price", "asc") => products
                 .OrderBy(product => product.Price)
@@ -356,11 +391,33 @@ public class DataAccessor(
                 .ThenBy(product => product.Id),
 
             ("name", "desc") => products
-                .OrderByDescending(product => product.Name)
+                .OrderByDescending(product =>
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty)
                 .ThenBy(product => product.Id),
 
             _ => products
-                .OrderBy(product => product.Name)
+                .OrderBy(product =>
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty)
                 .ThenBy(product => product.Id)
         };
 
@@ -373,7 +430,20 @@ public class DataAccessor(
             {
                 Id = product.Id,
                 Sku = product.Sku,
-                Name = product.Name,
+
+                Name =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = product.Slug,
                 Price = product.Price,
                 StockQuantity = product.StockQuantity,
@@ -429,8 +499,12 @@ public class DataAccessor(
                 totalCount / (double)query.PageSize)
         };
     }
-    public async Task<ProductDetailsDto?> GetProductByIdAsync(Guid id)
+    public async Task<ProductDetailsDto?> GetProductByIdAsync(
+        Guid id,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var product = await _dataContext.Products
             .AsNoTracking()
             .Where(product =>
@@ -440,9 +514,35 @@ public class DataAccessor(
             {
                 Id = product.Id,
                 Sku = product.Sku,
-                Name = product.Name,
+
+                Name =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = product.Slug,
-                Description = product.Description,
+
+                Description =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 IsActive = product.IsActive,
                 Price = product.Price,
                 StockQuantity = product.StockQuantity,
@@ -474,15 +574,40 @@ public class DataAccessor(
                     })
                     .ToList(),
 
+
                 Specifications = product.Specifications
                     .OrderBy(specification => specification.SortOrder)
-                    .ThenBy(specification => specification.Name)
                     .ThenBy(specification => specification.Id)
                     .Select(specification => new ProductSpecificationDto
                     {
                         Id = specification.Id,
-                        Name = specification.Name,
-                        Value = specification.Value,
+
+                        Name =
+                            specification.Translations
+                                .Where(t => t.CultureCode == cultureCode)
+                                .Select(t => t.Name)
+                                .FirstOrDefault()
+                            ??
+                            specification.Translations
+                                .Where(t => t.CultureCode == DefaultCultureCode)
+                                .Select(t => t.Name)
+                                .FirstOrDefault()
+                            ??
+                            string.Empty,
+
+                        Value =
+                            specification.Translations
+                                .Where(t => t.CultureCode == cultureCode)
+                                .Select(t => t.Value)
+                                .FirstOrDefault()
+                            ??
+                            specification.Translations
+                                .Where(t => t.CultureCode == DefaultCultureCode)
+                                .Select(t => t.Value)
+                                .FirstOrDefault()
+                            ??
+                            string.Empty,
+
                         SortOrder = specification.SortOrder
                     })
                     .ToList()
@@ -507,8 +632,18 @@ public class DataAccessor(
         return product;
     }
     public async Task<ProductDetailsDto?> GetProductBySlugAsync(
-        string slug)
+        string slug,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            return null;
+        }
+
+        slug = slug.Trim().ToLowerInvariant();
+
         var product = await _dataContext.Products
             .AsNoTracking()
             .Where(product =>
@@ -518,9 +653,34 @@ public class DataAccessor(
             {
                 Id = product.Id,
                 Sku = product.Sku,
-                Name = product.Name,
+
+                Name =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
+                Description =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = product.Slug,
-                Description = product.Description,
                 IsActive = product.IsActive,
                 Price = product.Price,
                 StockQuantity = product.StockQuantity,
@@ -552,15 +712,40 @@ public class DataAccessor(
                     })
                     .ToList(),
 
+
                 Specifications = product.Specifications
                     .OrderBy(specification => specification.SortOrder)
-                    .ThenBy(specification => specification.Name)
                     .ThenBy(specification => specification.Id)
                     .Select(specification => new ProductSpecificationDto
                     {
                         Id = specification.Id,
-                        Name = specification.Name,
-                        Value = specification.Value,
+
+                        Name =
+                            specification.Translations
+                                .Where(t => t.CultureCode == cultureCode)
+                                .Select(t => t.Name)
+                                .FirstOrDefault()
+                            ??
+                            specification.Translations
+                                .Where(t => t.CultureCode == DefaultCultureCode)
+                                .Select(t => t.Name)
+                                .FirstOrDefault()
+                            ??
+                            string.Empty,
+
+                        Value =
+                            specification.Translations
+                                .Where(t => t.CultureCode == cultureCode)
+                                .Select(t => t.Value)
+                                .FirstOrDefault()
+                            ??
+                            specification.Translations
+                                .Where(t => t.CultureCode == DefaultCultureCode)
+                                .Select(t => t.Value)
+                                .FirstOrDefault()
+                            ??
+                            string.Empty,
+
                         SortOrder = specification.SortOrder
                     })
                     .ToList()
@@ -585,12 +770,19 @@ public class DataAccessor(
         return product;
     }
     public async Task<ProductDetailsDto> CreateProductAsync(
-        ProductCreateRequest request)
+        ProductCreateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        // Validate product translations.
+        var translations = NormalizeProductTranslations(
+            request.Translations);
+
         var sku = request.Sku.Trim();
         var slug = request.Slug.Trim().ToLowerInvariant();
 
-        // Check for duplicate SKU and slug.
+        // Check for duplicate SKU.
         if (await _dataContext.Products.AnyAsync(
                 product => product.Sku == sku))
         {
@@ -598,6 +790,7 @@ public class DataAccessor(
                 "A product with this SKU already exists.");
         }
 
+        // Check for duplicate slug.
         if (await _dataContext.Products.AnyAsync(
                 product => product.Slug == slug))
         {
@@ -605,12 +798,13 @@ public class DataAccessor(
                 "A product with this slug already exists.");
         }
 
-        // Validate the brand.
+        // Validate brand.
         if (request.BrandId.HasValue)
         {
             var brandExists = await _dataContext.Brands.AnyAsync(
-                brand => brand.Id == request.BrandId.Value
-                         && brand.IsActive);
+                brand =>
+                    brand.Id == request.BrandId.Value &&
+                    brand.IsActive);
 
             if (!brandExists)
             {
@@ -620,7 +814,9 @@ public class DataAccessor(
         }
 
         // Validate categories.
-        var categoryIds = request.CategoryIds.Distinct().ToList();
+        var categoryIds = request.CategoryIds
+            .Distinct()
+            .ToList();
 
         if (categoryIds.Count != request.CategoryIds.Count)
         {
@@ -632,8 +828,9 @@ public class DataAccessor(
         {
             var activeCategoryCount =
                 await _dataContext.Categories.CountAsync(
-                    category => categoryIds.Contains(category.Id)
-                                && category.IsActive);
+                    category =>
+                        categoryIds.Contains(category.Id) &&
+                        category.IsActive);
 
             if (activeCategoryCount != categoryIds.Count)
             {
@@ -642,7 +839,7 @@ public class DataAccessor(
             }
         }
 
-        // Validate specification names.
+        // Validate specifications.
         if (request.Specifications is null)
         {
             throw new ArgumentException(
@@ -652,42 +849,49 @@ public class DataAccessor(
         var specifications = request.Specifications
             .Select(specification =>
             {
-                var (name, value) = ValidateAndNormalizeSpecification(
-                    specification.Name,
-                    specification.Value,
-                    specification.SortOrder);
+                if (specification is null)
+                {
+                    throw new ArgumentException(
+                        "Specification cannot be null.");
+                }
+
+                var specificationTranslations =
+                    NormalizeSpecificationTranslations(
+                        specification.Translations);
+
+                if (specification.SortOrder < 0)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(specification.SortOrder),
+                        "SortOrder cannot be negative.");
+                }
 
                 return new
                 {
-                    Name = name,
-                    Value = value,
+                    Translations = specificationTranslations,
                     specification.SortOrder
                 };
             })
             .ToList();
 
-        var specificationNames = specifications
-            .Select(specification => specification.Name)
-            .ToList();
+        EnsureUniqueSpecificationNames(
+            specifications.SelectMany(
+                specification => specification.Translations));
 
-        if (specificationNames.Distinct(
-                StringComparer.OrdinalIgnoreCase).Count()
-            != specificationNames.Count)
-        {
-            throw new ArgumentException(
-                "Duplicate specification names are not allowed.");
-        }
+
+        // Names must be unique within each culture.
+        EnsureUniqueSpecificationNames(
+            specifications.SelectMany(
+                specification => specification.Translations));
 
         var now = DateTime.UtcNow;
-
         var productId = await GetDbIdentityAsync();
+
         var product = new Product
         {
             Id = productId,
             Sku = sku,
-            Name = request.Name.Trim(),
             Slug = slug,
-            Description = request.Description.Trim(),
             Price = request.Price,
             StockQuantity = request.StockQuantity,
             BrandId = request.BrandId,
@@ -698,39 +902,56 @@ public class DataAccessor(
 
         _dataContext.Products.Add(product);
 
+        // Save all product translations.
+        await SyncProductTranslationsAsync(
+            product,
+            translations);
+
+        // Add product categories.
         foreach (var categoryId in categoryIds)
         {
-            _dataContext.ProductCategories.Add(new ProductCategory
-            {
-                ProductId = product.Id,
-                CategoryId = categoryId
-            });
+            _dataContext.ProductCategories.Add(
+                new ProductCategory
+                {
+                    ProductId = product.Id,
+                    CategoryId = categoryId
+                });
         }
 
+        // Add specifications and their translations.
         foreach (var specification in specifications)
         {
-            _dataContext.ProductSpecifications.Add(
-                new ProductSpecification
-                {
-                    Id = await GetDbIdentityAsync(),
-                    ProductId = product.Id,
-                    Name = specification.Name,
-                    Value = specification.Value,
-                    SortOrder = specification.SortOrder
-                });
+            var entity = new ProductSpecification
+            {
+                Id = await GetDbIdentityAsync(),
+                ProductId = product.Id,
+                SortOrder = specification.SortOrder
+            };
+
+            _dataContext.ProductSpecifications.Add(entity);
+
+            await SyncSpecificationTranslationsAsync(
+                entity,
+                product.Id,
+                specification.Translations);
         }
 
         await SaveChangesOrThrowConflictAsync();
 
-        var createdProduct = await GetProductByIdAsync(product.Id);
+        var createdProduct = await GetProductForAdminByIdAsync(
+            product.Id,
+            cultureCode);
 
         return createdProduct
             ?? throw new InvalidOperationException(
                 "The product was created but could not be retrieved.");
     }
     public async Task<ProductDetailsDto?> GetProductForAdminByIdAsync(
-        Guid id)
+        Guid id,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var product = await _dataContext.Products
             .AsNoTracking()
             .Where(product => product.Id == id)
@@ -738,9 +959,44 @@ public class DataAccessor(
             {
                 Id = product.Id,
                 Sku = product.Sku,
-                Name = product.Name,
+
+                Translations = product.Translations
+                    .OrderBy(translation => translation.CultureCode)
+                    .Select(translation => new ProductTranslationDto
+                    {
+                        CultureCode = translation.CultureCode,
+                        Name = translation.Name,
+                        Description = translation.Description
+                    })
+                    .ToList(),
+
+                Name =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Name)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
+                Description =
+                    product.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    product.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = product.Slug,
-                Description = product.Description,
                 Price = product.Price,
                 StockQuantity = product.StockQuantity,
                 IsActive = product.IsActive,
@@ -772,15 +1028,51 @@ public class DataAccessor(
                     })
                     .ToList(),
 
+
                 Specifications = product.Specifications
                     .OrderBy(specification => specification.SortOrder)
-                    .ThenBy(specification => specification.Name)
                     .ThenBy(specification => specification.Id)
                     .Select(specification => new ProductSpecificationDto
                     {
                         Id = specification.Id,
-                        Name = specification.Name,
-                        Value = specification.Value,
+
+                        Translations = specification.Translations
+                            .OrderBy(translation => translation.CultureCode)
+                            .Select(translation =>
+                                new ProductSpecificationTranslationDto
+                                {
+                                    CultureCode = translation.CultureCode,
+                                    Name = translation.Name,
+                                    Value = translation.Value
+                                })
+                            .ToList(),
+
+                        Name =
+                            specification.Translations
+                                .Where(t => t.CultureCode == cultureCode)
+                                .Select(t => t.Name)
+                                .FirstOrDefault()
+                            ??
+                            specification.Translations
+                                .Where(t => t.CultureCode == DefaultCultureCode)
+                                .Select(t => t.Name)
+                                .FirstOrDefault()
+                            ??
+                            string.Empty,
+
+                        Value =
+                            specification.Translations
+                                .Where(t => t.CultureCode == cultureCode)
+                                .Select(t => t.Value)
+                                .FirstOrDefault()
+                            ??
+                            specification.Translations
+                                .Where(t => t.CultureCode == DefaultCultureCode)
+                                .Select(t => t.Value)
+                                .FirstOrDefault()
+                            ??
+                            string.Empty,
+
                         SortOrder = specification.SortOrder
                     })
                     .ToList()
@@ -806,13 +1098,16 @@ public class DataAccessor(
     }
     public async Task<ProductDetailsDto?> UpdateProductAsync(
         Guid id,
-        ProductUpdateRequest request)
+        ProductUpdateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
-        // Includes inactive products intentionally:
-        // administrators may edit archived products.
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var product = await _dataContext.Products
+            .Include(p => p.Translations)
             .Include(p => p.ProductCategories)
             .Include(p => p.Specifications)
+                .ThenInclude(s => s.Translations)
             .FirstOrDefaultAsync(p => p.Id == id);
 
         if (product is null)
@@ -840,8 +1135,9 @@ public class DataAccessor(
         if (request.BrandId.HasValue)
         {
             var brandExists = await _dataContext.Brands.AnyAsync(
-                brand => brand.Id == request.BrandId.Value
-                         && brand.IsActive);
+                brand =>
+                    brand.Id == request.BrandId.Value &&
+                    brand.IsActive);
 
             if (!brandExists)
             {
@@ -850,7 +1146,9 @@ public class DataAccessor(
             }
         }
 
-        var categoryIds = request.CategoryIds.Distinct().ToList();
+        var categoryIds = request.CategoryIds
+            .Distinct()
+            .ToList();
 
         if (categoryIds.Count != request.CategoryIds.Count)
         {
@@ -862,8 +1160,9 @@ public class DataAccessor(
         {
             var activeCategoryCount =
                 await _dataContext.Categories.CountAsync(
-                    category => categoryIds.Contains(category.Id)
-                                && category.IsActive);
+                    category =>
+                        categoryIds.Contains(category.Id) &&
+                        category.IsActive);
 
             if (activeCategoryCount != categoryIds.Count)
             {
@@ -872,120 +1171,149 @@ public class DataAccessor(
             }
         }
 
-        // Normalize and validate specification names before modifying the product.
         if (request.Specifications is null)
         {
             throw new ArgumentException(
                 "Specifications cannot be null.");
         }
 
+        var translations = NormalizeProductTranslations(
+            request.Translations);
+
         var specifications = request.Specifications
             .Select(specification =>
             {
-                var (name, value) = ValidateAndNormalizeSpecification(
-                    specification.Name,
-                    specification.Value,
-                    specification.SortOrder);
+                if (specification is null)
+                {
+                    throw new ArgumentException(
+                        "Specification cannot be null.");
+                }
+
+                var specificationTranslations =
+                    NormalizeSpecificationTranslations(
+                        specification.Translations);
+
+                if (specification.SortOrder < 0)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(specification.SortOrder),
+                        "SortOrder cannot be negative.");
+                }
 
                 return new
                 {
-                    Name = name,
-                    Value = value,
+                    specification.Id,
+                    Translations = specificationTranslations,
                     specification.SortOrder
                 };
             })
             .ToList();
 
-        var specificationNames = specifications
-            .Select(specification => specification.Name)
-            .ToList();
+        // Проверяем уникальность названий характеристик
+        // во всём входящем запросе отдельно для каждой локали.
+        EnsureUniqueSpecificationNames(
+            specifications.SelectMany(s => s.Translations));
 
-        if (specificationNames.Distinct(
-                StringComparer.OrdinalIgnoreCase).Count()
-            != specificationNames.Count)
-        {
-            throw new ArgumentException(
-                "Duplicate specification names are not allowed.");
-        }
+        var existingSpecifications = product.Specifications
+            .ToDictionary(s => s.Id);
 
-        // Update product fields. IsActive is deliberately not changed here.
+        var processedSpecificationIds = new HashSet<Guid>();
+
+        // Обновляем общие поля товара.
         product.Sku = sku;
-        product.Name = request.Name.Trim();
         product.Slug = slug;
-        product.Description = request.Description.Trim();
         product.Price = request.Price;
         product.StockQuantity = request.StockQuantity;
         product.BrandId = request.BrandId;
         product.UpdatedAt = DateTime.UtcNow;
 
-        // Synchronize category links.
-        var requestedCategoryIds = categoryIds.ToHashSet();
+        // Обновляем переводы товара.
+        await SyncProductTranslationsAsync(
+            product,
+            translations);
 
-        var linksToRemove = product.ProductCategories
-            .Where(link => !requestedCategoryIds.Contains(link.CategoryId))
+        // Синхронизируем категории.
+        var categoriesToRemove = product.ProductCategories
+            .Where(pc => !categoryIds.Contains(pc.CategoryId))
             .ToList();
 
-        _dataContext.ProductCategories.RemoveRange(linksToRemove);
+        _dataContext.ProductCategories.RemoveRange(categoriesToRemove);
 
-        var currentCategoryIds = product.ProductCategories
-            .Select(link => link.CategoryId)
+        var existingCategoryIds = product.ProductCategories
+            .Select(pc => pc.CategoryId)
             .ToHashSet();
 
-        foreach (var categoryId in categoryIds.Where(
-            categoryId => !currentCategoryIds.Contains(categoryId)))
+        foreach (var categoryId in categoryIds)
         {
-            _dataContext.ProductCategories.Add(new ProductCategory
+            if (existingCategoryIds.Contains(categoryId))
+            {
+                continue;
+            }
+
+            product.ProductCategories.Add(new ProductCategory
             {
                 ProductId = product.Id,
                 CategoryId = categoryId
             });
         }
 
-        // Remove specifications omitted from the request.
-        var requestedSpecificationNames = specificationNames
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Обновляем или создаём характеристики.
+        foreach (var requested in specifications)
+        {
+            ProductSpecification specification;
 
+            if (requested.Id.HasValue)
+            {
+                if (!existingSpecifications.TryGetValue(
+                        requested.Id.Value,
+                        out specification!))
+                {
+                    throw new ArgumentException(
+                        "The specified characteristic does not belong to this product.");
+                }
+
+                if (!processedSpecificationIds.Add(specification.Id))
+                {
+                    throw new ArgumentException(
+                        "A specification was supplied more than once.");
+                }
+            }
+            else
+            {
+                specification = new ProductSpecification
+                {
+                    Id = await GetDbIdentityAsync(),
+                    ProductId = product.Id
+                };
+
+                product.Specifications.Add(specification);
+
+                _dataContext.ProductSpecifications.Add(specification);
+
+                processedSpecificationIds.Add(specification.Id);
+            }
+
+            specification.SortOrder = requested.SortOrder;
+
+            await SyncSpecificationTranslationsAsync(
+                specification,
+                product.Id,
+                requested.Translations);
+        }
+
+        // Удаляем характеристики, которых больше нет в запросе.
         var specificationsToRemove = product.Specifications
-            .Where(existing =>
-                !requestedSpecificationNames.Contains(existing.Name))
+            .Where(s => !processedSpecificationIds.Contains(s.Id))
             .ToList();
 
         _dataContext.ProductSpecifications.RemoveRange(
             specificationsToRemove);
 
-        // Update matching specifications in place; add only genuinely new ones.
-        foreach (var specification in specifications)
-        {
-            var existingSpecification = product.Specifications
-                .FirstOrDefault(existing =>
-                    string.Equals(
-                        existing.Name,
-                        specification.Name,
-                        StringComparison.OrdinalIgnoreCase));
-
-            if (existingSpecification is not null)
-            {
-                existingSpecification.Name = specification.Name;
-                existingSpecification.Value = specification.Value;
-                existingSpecification.SortOrder = specification.SortOrder;
-
-                continue;
-            }
-
-            _dataContext.ProductSpecifications.Add(
-                new ProductSpecification
-                {
-                    Id = await GetDbIdentityAsync(),
-                    ProductId = product.Id,
-                    Name = specification.Name,
-                    Value = specification.Value,
-                    SortOrder = specification.SortOrder
-                });
-        }
-
         await SaveChangesOrThrowConflictAsync();
 
-        return await GetProductForAdminByIdAsync(id)
+        return await GetProductForAdminByIdAsync(
+            product.Id,
+            cultureCode)
             ?? throw new InvalidOperationException(
                 "The product was updated but could not be retrieved.");
     }
@@ -999,11 +1327,11 @@ public class DataAccessor(
             return false;
         }
 
-        // Soft delete: public catalog queries already filter IsActive == true.
         product.IsActive = false;
         product.UpdatedAt = DateTime.UtcNow;
 
         await _dataContext.SaveChangesAsync();
+
         return true;
     }
     public async Task<bool> RestoreProductAsync(Guid id)
@@ -1023,11 +1351,14 @@ public class DataAccessor(
 
         return true;
     }
-
     public async Task<List<ProductSpecificationDto>?> GetProductSpecificationsAsync(
         Guid productId,
-        bool includeInactiveProduct = false)
+        string cultureCode = DefaultCultureCode,
+        bool includeInactiveProduct = false,
+        bool includeTranslations = false)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var productQuery = _dataContext.Products
             .AsNoTracking()
             .Where(product => product.Id == productId);
@@ -1042,26 +1373,31 @@ public class DataAccessor(
             return null;
         }
 
-        return await _dataContext.ProductSpecifications
+        var specifications = await _dataContext.ProductSpecifications
             .AsNoTracking()
+            .Include(specification => specification.Translations)
             .Where(specification => specification.ProductId == productId)
-            .OrderBy(specification => specification.SortOrder)
-            .ThenBy(specification => specification.Name)
-            .ThenBy(specification => specification.Id)
-            .Select(specification => new ProductSpecificationDto
-            {
-                Id = specification.Id,
-                Name = specification.Name,
-                Value = specification.Value,
-                SortOrder = specification.SortOrder
-            })
             .ToListAsync();
+
+        return specifications
+            .Select(specification =>
+                MapSpecificationDto(
+                    specification,
+                    cultureCode,
+                    includeTranslations))
+            .OrderBy(specification => specification.SortOrder)
+            .ThenBy(specification => specification.Id)
+            .ToList();
     }
     public async Task<ProductSpecificationDto?> GetProductSpecificationAsync(
         Guid productId,
         Guid specificationId,
-        bool includeInactiveProduct = false)
+        string cultureCode = DefaultCultureCode,
+        bool includeInactiveProduct = false,
+        bool includeTranslations = false)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var productQuery = _dataContext.Products
             .AsNoTracking()
             .Where(product => product.Id == productId);
@@ -1072,109 +1408,13 @@ public class DataAccessor(
         }
 
         if (!await productQuery.AnyAsync())
-        {
-            return null;
-        }
-
-        return await _dataContext.ProductSpecifications
-            .AsNoTracking()
-            .Where(specification =>
-                specification.ProductId == productId &&
-                specification.Id == specificationId)
-            .Select(specification => new ProductSpecificationDto
-            {
-                Id = specification.Id,
-                Name = specification.Name,
-                Value = specification.Value,
-                SortOrder = specification.SortOrder
-            })
-            .FirstOrDefaultAsync();
-    }
-    private async Task EnsureSpecificationNameIsUniqueAsync(
-        Guid productId,
-        string name,
-        Guid? excludeSpecificationId = null)
-    {
-        var query = _dataContext.ProductSpecifications
-            .AsNoTracking()
-            .Where(specification => specification.ProductId == productId);
-
-        if (excludeSpecificationId.HasValue)
-        {
-            query = query.Where(specification =>
-                specification.Id != excludeSpecificationId.Value);
-        }
-
-        var existingNames = await query
-            .Select(specification => specification.Name)
-            .ToListAsync();
-
-        if (existingNames.Any(existingName =>
-            string.Equals(
-                existingName.Trim(),
-                name,
-                StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new InvalidOperationException(
-                "A specification with this name already exists for the product.");
-        }
-    }
-    public async Task<ProductSpecificationDto> CreateProductSpecificationAsync(
-        Guid productId,
-        ProductSpecificationCreateRequest request)
-    {
-        var product = await _dataContext.Products
-            .FirstOrDefaultAsync(product => product.Id == productId);
-
-        if (product is null)
-        {
-            throw new KeyNotFoundException("Product not found.");
-        }
-
-        var (name, value) = ValidateAndNormalizeSpecification(
-            request.Name,
-            request.Value,
-            request.SortOrder);
-
-        await EnsureSpecificationNameIsUniqueAsync(productId, name);
-
-        var specification = new ProductSpecification
-        {
-            Id = await GetDbIdentityAsync(),
-            ProductId = productId,
-            Name = name,
-            Value = value,
-            SortOrder = request.SortOrder
-        };
-
-        _dataContext.ProductSpecifications.Add(specification);
-
-        product.UpdatedAt = DateTime.UtcNow;
-
-        await SaveChangesOrThrowConflictAsync();
-
-        return new ProductSpecificationDto
-        {
-            Id = specification.Id,
-            Name = specification.Name,
-            Value = specification.Value,
-            SortOrder = specification.SortOrder
-        };
-    }
-    public async Task<ProductSpecificationDto?> UpdateProductSpecificationAsync(
-        Guid productId,
-        Guid specificationId,
-        ProductSpecificationUpdateRequest request)
-    {
-        var product = await _dataContext.Products
-            .FirstOrDefaultAsync(product => product.Id == productId);
-
-        if (product is null)
         {
             return null;
         }
 
         var specification = await _dataContext.ProductSpecifications
+            .AsNoTracking()
+            .Include(specification => specification.Translations)
             .FirstOrDefaultAsync(specification =>
                 specification.Id == specificationId &&
                 specification.ProductId == productId);
@@ -1184,31 +1424,120 @@ public class DataAccessor(
             return null;
         }
 
-        var (name, value) = ValidateAndNormalizeSpecification(
-            request.Name,
-            request.Value,
-            request.SortOrder);
+        return MapSpecificationDto(
+            specification,
+            cultureCode,
+            includeTranslations);
+    }
+    public async Task<ProductSpecificationDto> CreateProductSpecificationAsync(
+        Guid productId,
+        ProductSpecificationCreateRequest request,
+        string cultureCode = DefaultCultureCode)
+    {
+        cultureCode = NormalizeCultureCode(cultureCode);
 
-        await EnsureSpecificationNameIsUniqueAsync(
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(product => product.Id == productId);
+
+        if (product is null)
+        {
+            throw new KeyNotFoundException("Product not found.");
+        }
+
+        var translations = NormalizeSpecificationTranslations(
+            request.Translations);
+
+        if (request.SortOrder < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request.SortOrder),
+                "SortOrder cannot be negative.");
+        }
+
+        await EnsureSpecificationTranslationsAreUniqueAsync(
             productId,
-            name,
-            specificationId);
+            translations);
 
-        specification.Name = name;
-        specification.Value = value;
-        specification.SortOrder = request.SortOrder;
+        var specification = new ProductSpecification
+        {
+            Id = await GetDbIdentityAsync(),
+            ProductId = productId,
+            SortOrder = request.SortOrder
+        };
+
+        _dataContext.ProductSpecifications.Add(specification);
+
+        await SyncSpecificationTranslationsAsync(
+            specification,
+            productId,
+            translations);
 
         product.UpdatedAt = DateTime.UtcNow;
 
         await SaveChangesOrThrowConflictAsync();
 
-        return new ProductSpecificationDto
+        return MapSpecificationDto(
+            specification,
+            cultureCode,
+            includeTranslations: true);
+    }
+    public async Task<ProductSpecificationDto?> UpdateProductSpecificationAsync(
+        Guid productId,
+        Guid specificationId,
+        ProductSpecificationUpdateRequest request,
+        string cultureCode = DefaultCultureCode)
+    {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        var product = await _dataContext.Products
+            .FirstOrDefaultAsync(product => product.Id == productId);
+
+        if (product is null)
         {
-            Id = specification.Id,
-            Name = specification.Name,
-            Value = specification.Value,
-            SortOrder = specification.SortOrder
-        };
+            return null;
+        }
+
+        var specification = await _dataContext.ProductSpecifications
+            .Include(s => s.Translations)
+            .FirstOrDefaultAsync(s =>
+                s.Id == specificationId &&
+                s.ProductId == productId);
+
+        if (specification is null)
+        {
+            return null;
+        }
+
+        var translations = NormalizeSpecificationTranslations(
+            request.Translations);
+
+        if (request.SortOrder < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(request.SortOrder),
+                "SortOrder cannot be negative.");
+        }
+
+        await EnsureSpecificationTranslationsAreUniqueAsync(
+            productId,
+            translations,
+            specificationId);
+
+        specification.SortOrder = request.SortOrder;
+
+        await SyncSpecificationTranslationsAsync(
+            specification,
+            productId,
+            translations);
+
+        product.UpdatedAt = DateTime.UtcNow;
+
+        await SaveChangesOrThrowConflictAsync();
+
+        return MapSpecificationDto(
+            specification,
+            cultureCode,
+            includeTranslations: true);
     }
     public async Task<bool> DeleteProductSpecificationAsync(
         Guid productId,
@@ -1223,6 +1552,7 @@ public class DataAccessor(
         }
 
         var specification = await _dataContext.ProductSpecifications
+            .Include(specification => specification.Translations)
             .FirstOrDefaultAsync(specification =>
                 specification.Id == specificationId &&
                 specification.ProductId == productId);
@@ -1232,60 +1562,413 @@ public class DataAccessor(
             return false;
         }
 
+        _dataContext.ProductSpecificationTranslations.RemoveRange(
+            specification.Translations);
+
         _dataContext.ProductSpecifications.Remove(specification);
 
         product.UpdatedAt = DateTime.UtcNow;
 
-        await _dataContext.SaveChangesAsync();
+        await SaveChangesOrThrowConflictAsync();
 
         return true;
     }
 
 
-    private static (string Name, string Value) ValidateAndNormalizeSpecification(
-        string name,
-        string value,
-        int sortOrder)
+    private static ProductSpecificationDto MapSpecificationDto(
+        ProductSpecification specification,
+        string cultureCode,
+        bool includeTranslations = false)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        var localizedTranslation =
+            specification.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == cultureCode)
+            ??
+            specification.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == DefaultCultureCode);
+
+        return new ProductSpecificationDto
+        {
+            Id = specification.Id,
+
+            Name = localizedTranslation?.Name ?? string.Empty,
+            Value = localizedTranslation?.Value ?? string.Empty,
+
+            SortOrder = specification.SortOrder,
+
+            Translations = includeTranslations
+                ? specification.Translations
+                    .OrderBy(translation => translation.CultureCode)
+                    .Select(translation =>
+                        new ProductSpecificationTranslationDto
+                        {
+                            CultureCode = translation.CultureCode,
+                            Name = translation.Name,
+                            Value = translation.Value
+                        })
+                    .ToList()
+                : new List<ProductSpecificationTranslationDto>()
+        };
+    }
+    private const string DefaultCultureCode = "uk-UA";
+    private static readonly HashSet<string> SupportedCultures =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+        "uk-UA",
+        "en-US"
+        };
+    private static string NormalizeCultureCode(string? cultureCode)
+    {
+        if (string.IsNullOrWhiteSpace(cultureCode))
+        {
+            return DefaultCultureCode;
+        }
+
+        try
+        {
+            var culture = CultureInfo.GetCultureInfo(
+                cultureCode.Trim()).Name;
+
+            return SupportedCultures.Contains(culture)
+                ? culture
+                : DefaultCultureCode;
+        }
+        catch (CultureNotFoundException)
+        {
+            return DefaultCultureCode;
+        }
+    }
+    private static string ValidateTranslationCultureCode(
+        string? cultureCode)
+    {
+        if (string.IsNullOrWhiteSpace(cultureCode))
         {
             throw new ArgumentException(
-                "Specification name is required.",
-                nameof(name));
+                "CultureCode is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(value))
+        string normalized;
+
+        try
+        {
+            normalized = CultureInfo.GetCultureInfo(
+                cultureCode.Trim()).Name;
+        }
+        catch (CultureNotFoundException)
         {
             throw new ArgumentException(
-                "Specification value is required.",
-                nameof(value));
+                $"Invalid culture code: {cultureCode}.");
         }
 
-        name = name.Trim();
-        value = value.Trim();
-
-        if (name.Length > 150)
+        if (!SupportedCultures.Contains(normalized))
         {
             throw new ArgumentException(
-                "Specification name cannot exceed 150 characters.",
-                nameof(name));
+                $"Unsupported culture: {normalized}.");
         }
 
-        if (value.Length > 1000)
+        return normalized;
+    }
+
+    private static List<ProductTranslationRequest> NormalizeProductTranslations(
+        List<ProductTranslationRequest>? translations)
+    {
+        if (translations is null || translations.Count == 0)
         {
             throw new ArgumentException(
-                "Specification value cannot exceed 1000 characters.",
-                nameof(value));
+                "At least one product translation is required.");
         }
 
-        if (sortOrder < 0)
+        var result = new List<ProductTranslationRequest>();
+
+        var cultures = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(sortOrder),
-                "SortOrder cannot be negative.");
+            if (translation is null)
+            {
+                throw new ArgumentException(
+                    "Product translation cannot be null.");
+            }
+
+            var culture = ValidateTranslationCultureCode(
+                translation.CultureCode);
+
+            if (!cultures.Add(culture))
+            {
+                throw new ArgumentException(
+                    $"Duplicate product translation culture: {culture}.");
+            }
+
+            var name = translation.Name?.Trim();
+            var description = translation.Description?.Trim()
+                ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException(
+                    $"Product name is required for {culture}.");
+            }
+
+            if (name.Length > 150 || description.Length > 5000)
+            {
+                throw new ArgumentException(
+                    $"Product translation exceeds allowed length for {culture}.");
+            }
+
+            result.Add(new ProductTranslationRequest
+            {
+                CultureCode = culture,
+                Name = name,
+                Description = description
+            });
         }
 
-        return (name, value);
+        if (!cultures.Contains(DefaultCultureCode))
+        {
+            throw new ArgumentException(
+                "The uk-UA product translation is required.");
+        }
+
+        return result;
+    }
+
+    private static List<ProductSpecificationTranslationRequest> NormalizeSpecificationTranslations(
+            List<ProductSpecificationTranslationRequest>? translations)
+    {
+        if (translations is null || translations.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one specification translation is required.");
+        }
+
+        var result =
+            new List<ProductSpecificationTranslationRequest>();
+
+        var cultures = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (translation is null)
+            {
+                throw new ArgumentException(
+                    "Specification translation cannot be null.");
+            }
+
+            var culture = ValidateTranslationCultureCode(
+                translation.CultureCode);
+
+            if (!cultures.Add(culture))
+            {
+                throw new ArgumentException(
+                    $"Duplicate specification translation culture: {culture}.");
+            }
+
+            var name = translation.Name?.Trim();
+            var value = translation.Value?.Trim();
+
+            if (string.IsNullOrWhiteSpace(name) ||
+                string.IsNullOrWhiteSpace(value))
+            {
+                throw new ArgumentException(
+                    $"Specification name and value are required for {culture}.");
+            }
+
+            if (name.Length > 150 || value.Length > 1000)
+            {
+                throw new ArgumentException(
+                    $"Specification translation exceeds allowed length for {culture}.");
+            }
+
+            result.Add(new ProductSpecificationTranslationRequest
+            {
+                CultureCode = culture,
+                Name = name,
+                Value = value
+            });
+        }
+
+        if (!cultures.Contains(DefaultCultureCode))
+        {
+            throw new ArgumentException(
+                "The uk-UA specification translation is required.");
+        }
+
+        return result;
+    }
+    private static void EnsureUniqueSpecificationNames(
+        IEnumerable<ProductSpecificationTranslationRequest> translations)
+    {
+        var duplicate = translations
+            .GroupBy(
+                translation => translation.CultureCode,
+                StringComparer.OrdinalIgnoreCase)
+            .Any(cultureGroup =>
+                cultureGroup
+                    .GroupBy(
+                        translation => translation.Name,
+                        StringComparer.OrdinalIgnoreCase)
+                    .Any(nameGroup => nameGroup.Count() > 1));
+
+        if (duplicate)
+        {
+            throw new ArgumentException(
+                "Duplicate specification names are not allowed " +
+                "within the same culture.");
+        }
+    }
+    private async Task EnsureSpecificationTranslationsAreUniqueAsync(
+        Guid productId,
+        List<ProductSpecificationTranslationRequest> translations,
+        Guid? excludeSpecificationId = null)
+    {
+        var cultures = translations
+            .Select(translation => translation.CultureCode)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var query = _dataContext.ProductSpecificationTranslations
+            .AsNoTracking()
+            .Where(translation =>
+                translation.ProductId == productId &&
+                cultures.Contains(translation.CultureCode));
+
+        if (excludeSpecificationId.HasValue)
+        {
+            query = query.Where(translation =>
+                translation.SpecificationId != excludeSpecificationId.Value);
+        }
+
+        var existingTranslations = await query
+            .Select(translation => new
+            {
+                translation.CultureCode,
+                translation.Name
+            })
+            .ToListAsync();
+
+        foreach (var translation in translations)
+        {
+            var duplicate = existingTranslations.Any(existing =>
+                string.Equals(
+                    existing.CultureCode,
+                    translation.CultureCode,
+                    StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
+                    existing.Name,
+                    translation.Name,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (duplicate)
+            {
+                throw new InvalidOperationException(
+                    $"A specification with this name already exists " +
+                    $"for culture {translation.CultureCode}.");
+            }
+        }
+    }
+    private async Task SyncProductTranslationsAsync(
+        Product product,
+        List<ProductTranslationRequest> translations)
+    {
+        var incoming = translations.ToDictionary(
+            translation => translation.CultureCode,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existing in product.Translations.ToList())
+        {
+            if (!incoming.TryGetValue(
+                    existing.CultureCode,
+                    out var updated))
+            {
+                _dataContext.ProductTranslations.Remove(existing);
+                product.Translations.Remove(existing);
+                continue;
+            }
+
+            existing.Name = updated.Name;
+            existing.Description = updated.Description;
+        }
+
+        var existingCultures = product.Translations
+            .Select(translation => translation.CultureCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (existingCultures.Contains(translation.CultureCode))
+            {
+                continue;
+            }
+
+            var entity = new ProductTranslation
+            {
+                Id = await GetDbIdentityAsync(),
+                ProductId = product.Id,
+                CultureCode = translation.CultureCode,
+                Name = translation.Name,
+                Description = translation.Description
+            };
+
+            product.Translations.Add(entity);
+            _dataContext.ProductTranslations.Add(entity);
+        }
+
+    }
+    private async Task SyncSpecificationTranslationsAsync(
+        ProductSpecification specification,
+        Guid productId,
+        List<ProductSpecificationTranslationRequest> translations)
+    {
+        var incoming = translations.ToDictionary(
+            translation => translation.CultureCode,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existing in specification.Translations.ToList())
+        {
+            if (!incoming.TryGetValue(
+                    existing.CultureCode,
+                    out var updated))
+            {
+                _dataContext.ProductSpecificationTranslations
+                    .Remove(existing);
+
+                specification.Translations.Remove(existing);
+                continue;
+            }
+
+            existing.Name = updated.Name;
+            existing.Value = updated.Value;
+        }
+
+        var existingCultures = specification.Translations
+            .Select(translation => translation.CultureCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (existingCultures.Contains(translation.CultureCode))
+            {
+                continue;
+            }
+
+            var entity = new ProductSpecificationTranslation
+            {
+                Id = await GetDbIdentityAsync(),
+                SpecificationId = specification.Id,
+                ProductId = productId,
+                CultureCode = translation.CultureCode,
+                Name = translation.Name,
+                Value = translation.Value
+            };
+
+            specification.Translations.Add(entity);
+
+            _dataContext.ProductSpecificationTranslations.Add(entity);
+        }
     }
     private static string BuildProductImageUrl(string imageKey)
     {
@@ -2975,8 +3658,6 @@ public class DataAccessor(
             .AsNoTracking()
             .Where(item => item.Cart.UserId == userId)
             .Include(item => item.Product)
-            .OrderBy(item => item.Product.Name)
-            .ThenBy(item => item.Id)
             .ToListAsync(cancellationToken);
 
         return await BuildCartResponseAsync(cartItems);
@@ -3365,7 +4046,6 @@ public class DataAccessor(
                 Id = item.Id,
                 ProductId = product.Id,
                 Sku = product.Sku,
-                ProductName = product.Name,
 
                 OriginalUnitPrice = product.Price,
                 UnitPrice = unitPrice,
@@ -3519,16 +4199,10 @@ public class DataAccessor(
         {
             var product = products[item.ProductId];
 
-            if (!product.IsActive)
-            {
-                throw new InvalidOperationException(
-                    $"Product '{product.Name}' is inactive.");
-            }
 
             if (product.StockQuantity < item.Quantity)
             {
                 throw new InvalidOperationException(
-                    $"Insufficient stock for '{product.Name}'. " +
                     $"Requested: {item.Quantity}. " +
                     $"Available: {product.StockQuantity}. " +
                     "Please update your cart.");
@@ -3579,7 +4253,6 @@ public class DataAccessor(
                 Id = Guid.NewGuid(),
                 OrderId = order.Id,
                 ProductId = product.Id,
-                ProductName = product.Name,
                 ProductSku = product.Sku,
                 UnitPrice = unitPrice,
                 Quantity = cartItem.Quantity,
@@ -3702,8 +4375,7 @@ public class DataAccessor(
                 if (restoredStock > int.MaxValue)
                 {
                     throw new InvalidOperationException(
-                        $"Restoring stock for '{product.Name}' " +
-                        "would exceed the maximum supported quantity.");
+                       "would exceed the maximum supported quantity.");
                 }
 
                 product.StockQuantity = (int)restoredStock;

@@ -466,16 +466,8 @@ namespace foxtrot_store_backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("longtext");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("longtext");
 
                     b.Property<decimal>("Price")
                         .HasPrecision(18, 2)
@@ -556,6 +548,30 @@ namespace foxtrot_store_backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "SortOrder");
+
+                    b.ToTable("ProductSpecifications");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecificationTranslation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CultureCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -564,8 +580,8 @@ namespace foxtrot_store_backend.Migrations
                     b.Property<Guid>("ProductId")
                         .HasColumnType("char(36)");
 
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("int");
+                    b.Property<Guid>("SpecificationId")
+                        .HasColumnType("char(36)");
 
                     b.Property<string>("Value")
                         .IsRequired()
@@ -574,12 +590,47 @@ namespace foxtrot_store_backend.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProductId", "Name")
+                    b.HasIndex("SpecificationId", "CultureCode")
                         .IsUnique();
 
-                    b.HasIndex("ProductId", "SortOrder");
+                    b.HasIndex("SpecificationId", "ProductId");
 
-                    b.ToTable("ProductSpecifications");
+                    b.HasIndex("ProductId", "CultureCode", "Name")
+                        .IsUnique();
+
+                    b.ToTable("ProductSpecificationTranslations");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductTranslation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CultureCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(5000)
+                        .HasColumnType("varchar(5000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("char(36)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId", "CultureCode")
+                        .IsUnique();
+
+                    b.ToTable("ProductTranslations");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Promotion", b =>
@@ -835,6 +886,29 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecificationTranslation", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.ProductSpecification", "Specification")
+                        .WithMany("Translations")
+                        .HasForeignKey("SpecificationId", "ProductId")
+                        .HasPrincipalKey("Id", "ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Specification");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductTranslation", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Product", "Product")
+                        .WithMany("Translations")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.PromotionProduct", b =>
                 {
                     b.HasOne("foxtrot_store_backend.Data.Entities.Product", "Product")
@@ -885,6 +959,13 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("PromotionProducts");
 
                     b.Navigation("Specifications");
+
+                    b.Navigation("Translations");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.ProductSpecification", b =>
+                {
+                    b.Navigation("Translations");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Promotion", b =>

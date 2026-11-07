@@ -1,10 +1,11 @@
-﻿using foxtrot_store_backend.Services.LocalStorage;
+﻿
 using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
+using foxtrot_store_backend.Services.LocalStorage;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-
+using System.Globalization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -16,7 +17,13 @@ public class ProductsController(
     ILogger<ProductsController> logger) : ControllerBase
 {
     private readonly DataAccessor _dataAccessor = dataAccessor;
+    private readonly ILocalStorageService _localStorage = localStorage;
     private readonly ILogger<ProductsController> _logger = logger;
+
+    private string CurrentCultureCode =>
+        CultureInfo.CurrentUICulture.Name;
+
+    private bool IsAdmin => User.IsInRole("Admin");
 
     [HttpGet]
     public async Task<IActionResult> GetProducts(
@@ -51,14 +58,16 @@ public class ProductsController(
             }
         }
 
-        if (query.MinPrice < 0)
+        if (query.MinPrice.HasValue &&
+            query.MinPrice.Value < 0)
         {
             ModelState.AddModelError(
                 nameof(query.MinPrice),
                 "MinPrice cannot be negative.");
         }
 
-        if (query.MaxPrice < 0)
+        if (query.MaxPrice.HasValue &&
+            query.MaxPrice.Value < 0)
         {
             ModelState.AddModelError(
                 nameof(query.MaxPrice),
@@ -67,7 +76,7 @@ public class ProductsController(
 
         if (query.MinPrice.HasValue &&
             query.MaxPrice.HasValue &&
-            query.MinPrice > query.MaxPrice)
+            query.MinPrice.Value > query.MaxPrice.Value)
         {
             ModelState.AddModelError(
                 nameof(query.MaxPrice),
@@ -81,7 +90,12 @@ public class ProductsController(
                 "Search cannot exceed 100 characters.");
         }
 
-        var allowedSortFields = new[] { "name", "price", "createdat" };
+        var allowedSortFields = new[]
+        {
+            "name",
+            "price",
+            "createdat"
+        };
 
         if (string.IsNullOrWhiteSpace(query.SortBy) ||
             !allowedSortFields.Contains(
@@ -113,7 +127,10 @@ public class ProductsController(
                     ApiName = "Products",
                     DataType = "application/json",
                     Manipulations = ["GET"],
-                    Links = { ["self"] = "/api/products" }
+                    Links =
+                    {
+                        ["self"] = "/api/products"
+                    }
                 },
                 Data = ModelState
                     .Where(entry => entry.Value?.Errors.Count > 0)
@@ -125,7 +142,9 @@ public class ProductsController(
             });
         }
 
-        var result = await _dataAccessor.GetProductsAsync(query);
+        var result = await _dataAccessor.GetProductsAsync(
+            query,
+            CurrentCultureCode);
 
         return Ok(new RestResponse
         {
@@ -136,7 +155,10 @@ public class ProductsController(
                 DataType = "json/array",
                 CacheTime = 0,
                 Manipulations = ["GET"],
-                Links = { ["self"] = "/api/products" },
+                Links =
+                {
+                    ["self"] = "/api/products"
+                },
                 Pagination = new RestMetaPagination
                 {
                     Page = result.Page,
@@ -157,7 +179,13 @@ public class ProductsController(
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetProductById(Guid id)
     {
-        var product = await _dataAccessor.GetProductByIdAsync(id);
+        var product = IsAdmin
+            ? await _dataAccessor.GetProductForAdminByIdAsync(
+                id,
+                CurrentCultureCode)
+            : await _dataAccessor.GetProductByIdAsync(
+                id,
+                CurrentCultureCode);
 
         if (product is null)
         {
@@ -167,9 +195,15 @@ public class ProductsController(
                 Meta = new RestMeta
                 {
                     ApiName = "Product",
-                    Links = { ["self"] = $"/api/products/{id}" }
+                    Links =
+                    {
+                        ["self"] = $"/api/products/{id}"
+                    }
                 },
-                Data = new { message = "Product not found." }
+                Data = new
+                {
+                    message = "Product not found."
+                }
             });
         }
 
@@ -203,7 +237,10 @@ public class ProductsController(
                 Meta = new RestMeta
                 {
                     ApiName = "Product",
-                    Links = { ["self"] = $"/api/products/slug/{slug}" }
+                    Links =
+                    {
+                        ["self"] = $"/api/products/slug/{slug}"
+                    }
                 },
                 Data = new
                 {
@@ -212,7 +249,17 @@ public class ProductsController(
             });
         }
 
-        var product = await _dataAccessor.GetProductBySlugAsync(slug);
+        var product = await _dataAccessor.GetProductBySlugAsync(
+            slug,
+            CurrentCultureCode);
+
+        // Admin receives the full translation collection.
+        if (product is not null && IsAdmin)
+        {
+            product = await _dataAccessor.GetProductForAdminByIdAsync(
+                product.Id,
+                CurrentCultureCode);
+        }
 
         if (product is null)
         {
@@ -222,9 +269,15 @@ public class ProductsController(
                 Meta = new RestMeta
                 {
                     ApiName = "Product",
-                    Links = { ["self"] = $"/api/products/slug/{slug}" }
+                    Links =
+                    {
+                        ["self"] = $"/api/products/slug/{slug}"
+                    }
                 },
-                Data = new { message = "Product not found." }
+                Data = new
+                {
+                    message = "Product not found."
+                }
             });
         }
 
@@ -250,16 +303,25 @@ public class ProductsController(
     [HttpGet("images/{imageKey}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetProductImage(
-    string imageKey,
-    CancellationToken cancellationToken)
+        string imageKey,
+        CancellationToken cancellationToken)
     {
-        var contentType = Path.GetExtension(imageKey).ToLowerInvariant() switch
+        if (string.IsNullOrWhiteSpace(imageKey))
         {
-            ".jpg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            _ => null
-        };
+            return BadRequest(new
+            {
+                message = "Image key is required."
+            });
+        }
+
+        var contentType =
+            Path.GetExtension(imageKey).ToLowerInvariant() switch
+            {
+                ".jpg" => "image/jpeg",
+                ".png" => "image/png",
+                ".webp" => "image/webp",
+                _ => null
+            };
 
         if (contentType is null)
         {
@@ -273,7 +335,7 @@ public class ProductsController(
 
         try
         {
-            imageStream = await localStorage.GetAsync(
+            imageStream = await _localStorage.GetAsync(
                 imageKey,
                 cancellationToken);
         }
@@ -300,18 +362,24 @@ public class ProductsController(
     public async Task<IActionResult> GetProductSpecifications(
         Guid productId)
     {
-        var path = $"/api/products/{productId}/specifications";
+        var path =
+            $"/api/products/{productId}/specifications";
 
         var specifications =
             await _dataAccessor.GetProductSpecificationsAsync(
                 productId,
-                User.IsInRole("Admin"));
+                cultureCode: CurrentCultureCode,
+                includeInactiveProduct: IsAdmin,
+                includeTranslations: IsAdmin);
 
         if (specifications is null)
         {
             return NotFound(CreateSpecificationResponse(
                 RestStatus.NotFound,
-                new { message = "Product not found." },
+                new
+                {
+                    message = "Product not found."
+                },
                 "json/object",
                 path,
                 "GET"));
@@ -325,8 +393,7 @@ public class ProductsController(
             "GET"));
     }
 
-    [HttpGet(
-    "{productId:guid}/specifications/{specificationId:guid}")]
+    [HttpGet("{productId:guid}/specifications/{specificationId:guid}")]
     public async Task<IActionResult> GetProductSpecification(
         Guid productId,
         Guid specificationId)
@@ -338,13 +405,18 @@ public class ProductsController(
             await _dataAccessor.GetProductSpecificationAsync(
                 productId,
                 specificationId,
-                User.IsInRole("Admin"));
+                cultureCode: CurrentCultureCode,
+                includeInactiveProduct: IsAdmin,
+                includeTranslations: IsAdmin);
 
         if (specification is null)
         {
             return NotFound(CreateSpecificationResponse(
                 RestStatus.NotFound,
-                new { message = "Product or specification not found." },
+                new
+                {
+                    message = "Product or specification not found."
+                },
                 "json/object",
                 path,
                 "GET"));
@@ -363,18 +435,22 @@ public class ProductsController(
         Guid productId,
         CancellationToken cancellationToken)
     {
-        var path = $"/api/products/{productId}/images";
+        var path =
+            $"/api/products/{productId}/images";
 
         var images = await _dataAccessor.GetProductImagesAsync(
             productId,
-            User.IsInRole("Admin"),
+            IsAdmin,
             cancellationToken);
 
         if (images is null)
         {
             return NotFound(CreateProductImageResponse(
                 RestStatus.NotFound,
-                new { message = "Product not found." },
+                new
+                {
+                    message = "Product not found."
+                },
                 "json/object",
                 path,
                 "GET"));
@@ -396,7 +472,9 @@ public class ProductsController(
         try
         {
             var createdProduct =
-                await _dataAccessor.CreateProductAsync(request);
+                await _dataAccessor.CreateProductAsync(
+                    request,
+                    CurrentCultureCode);
 
             var response = new RestResponse
             {
@@ -410,8 +488,7 @@ public class ProductsController(
                     Links =
                     {
                         ["parent"] = "/api/products",
-                        ["self"] =
-                            $"/api/products/{createdProduct.Id}"
+                        ["self"] = $"/api/products/{createdProduct.Id}"
                     }
                 },
                 Data = createdProduct
@@ -430,9 +507,15 @@ public class ProductsController(
                 {
                     ApiName = "Product",
                     Manipulations = ["POST"],
-                    Links = { ["self"] = "/api/products" }
+                    Links =
+                    {
+                        ["self"] = "/api/products"
+                    }
                 },
-                Data = new { message = exception.Message }
+                Data = new
+                {
+                    message = exception.Message
+                }
             });
         }
         catch (ArgumentException exception)
@@ -444,9 +527,15 @@ public class ProductsController(
                 {
                     ApiName = "Product",
                     Manipulations = ["POST"],
-                    Links = { ["self"] = "/api/products" }
+                    Links =
+                    {
+                        ["self"] = "/api/products"
+                    }
                 },
-                Data = new { message = exception.Message }
+                Data = new
+                {
+                    message = exception.Message
+                }
             });
         }
     }
@@ -457,14 +546,16 @@ public class ProductsController(
         Guid productId,
         [FromBody] ProductSpecificationCreateRequest request)
     {
-        var path = $"/api/products/{productId}/specifications";
+        var path =
+            $"/api/products/{productId}/specifications";
 
         try
         {
             var specification =
                 await _dataAccessor.CreateProductSpecificationAsync(
                     productId,
-                    request);
+                    request,
+                    CurrentCultureCode);
 
             var response = CreateSpecificationResponse(
                 RestStatus.Created,
@@ -486,7 +577,10 @@ public class ProductsController(
         {
             return NotFound(CreateSpecificationResponse(
                 RestStatus.NotFound,
-                new { message = exception.Message },
+                new
+                {
+                    message = exception.Message
+                },
                 "json/object",
                 path,
                 "POST"));
@@ -495,7 +589,10 @@ public class ProductsController(
         {
             return Conflict(CreateSpecificationResponse(
                 RestStatus.Conflict,
-                new { message = exception.Message },
+                new
+                {
+                    message = exception.Message
+                },
                 "json/object",
                 path,
                 "POST"));
@@ -504,7 +601,10 @@ public class ProductsController(
         {
             return BadRequest(CreateSpecificationResponse(
                 RestStatus.BadRequest,
-                new { message = exception.Message },
+                new
+                {
+                    message = exception.Message
+                },
                 "json/object",
                 path,
                 "POST"));
@@ -519,15 +619,24 @@ public class ProductsController(
     {
         try
         {
-            var product = await _dataAccessor.UpdateProductAsync(id, request);
+            var product = await _dataAccessor.UpdateProductAsync(
+                id,
+                request,
+                CurrentCultureCode);
 
             if (product is null)
             {
                 return NotFound(new RestResponse
                 {
                     Status = RestStatus.NotFound,
-                    Meta = new RestMeta { ApiName = "Product" },
-                    Data = new { message = "Product not found." }
+                    Meta = new RestMeta
+                    {
+                        ApiName = "Product"
+                    },
+                    Data = new
+                    {
+                        message = "Product not found."
+                    }
                 });
             }
 
@@ -539,7 +648,10 @@ public class ProductsController(
                     ApiName = "Product",
                     DataType = "json/object",
                     Manipulations = ["GET", "PUT", "DELETE"],
-                    Links = { ["self"] = $"/api/products/{id}" }
+                    Links =
+                    {
+                        ["self"] = $"/api/products/{id}"
+                    }
                 },
                 Data = product
             });
@@ -549,8 +661,14 @@ public class ProductsController(
             return Conflict(new RestResponse
             {
                 Status = RestStatus.Conflict,
-                Meta = new RestMeta { ApiName = "Product" },
-                Data = new { message = exception.Message }
+                Meta = new RestMeta
+                {
+                    ApiName = "Product"
+                },
+                Data = new
+                {
+                    message = exception.Message
+                }
             });
         }
         catch (ArgumentException exception)
@@ -558,8 +676,14 @@ public class ProductsController(
             return BadRequest(new RestResponse
             {
                 Status = RestStatus.BadRequest,
-                Meta = new RestMeta { ApiName = "Product" },
-                Data = new { message = exception.Message }
+                Meta = new RestMeta
+                {
+                    ApiName = "Product"
+                },
+                Data = new
+                {
+                    message = exception.Message
+                }
             });
         }
     }
@@ -572,7 +696,8 @@ public class ProductsController(
         [FromBody] ProductImageUpdateRequest request,
         CancellationToken cancellationToken)
     {
-        var path = $"/api/products/{productId}/images/{imageId}";
+        var path =
+            $"/api/products/{productId}/images/{imageId}";
 
         try
         {
@@ -586,7 +711,10 @@ public class ProductsController(
             {
                 return NotFound(CreateProductImageResponse(
                     RestStatus.NotFound,
-                    new { message = "Product or image not found." },
+                    new
+                    {
+                        message = "Product or image not found."
+                    },
                     "json/object",
                     path,
                     "PUT"));
@@ -603,7 +731,10 @@ public class ProductsController(
         {
             return BadRequest(CreateProductImageResponse(
                 RestStatus.BadRequest,
-                new { message = exception.Message },
+                new
+                {
+                    message = exception.Message
+                },
                 "json/object",
                 path,
                 "PUT"));
@@ -611,8 +742,7 @@ public class ProductsController(
     }
 
     [Authorize(Roles = "Admin")]
-    [HttpPut(
-    "{productId:guid}/specifications/{specificationId:guid}")]
+    [HttpPut("{productId:guid}/specifications/{specificationId:guid}")]
     public async Task<IActionResult> UpdateProductSpecification(
         Guid productId,
         Guid specificationId,
@@ -627,13 +757,17 @@ public class ProductsController(
                 await _dataAccessor.UpdateProductSpecificationAsync(
                     productId,
                     specificationId,
-                    request);
+                    request,
+                    CurrentCultureCode);
 
             if (specification is null)
             {
                 return NotFound(CreateSpecificationResponse(
                     RestStatus.NotFound,
-                    new { message = "Product or specification not found." },
+                    new
+                    {
+                        message = "Product or specification not found."
+                    },
                     "json/object",
                     path,
                     "PUT"));
@@ -650,7 +784,10 @@ public class ProductsController(
         {
             return Conflict(CreateSpecificationResponse(
                 RestStatus.Conflict,
-                new { message = exception.Message },
+                new
+                {
+                    message = exception.Message
+                },
                 "json/object",
                 path,
                 "PUT"));
@@ -659,7 +796,10 @@ public class ProductsController(
         {
             return BadRequest(CreateSpecificationResponse(
                 RestStatus.BadRequest,
-                new { message = exception.Message },
+                new
+                {
+                    message = exception.Message
+                },
                 "json/object",
                 path,
                 "PUT"));
@@ -677,16 +817,28 @@ public class ProductsController(
             return NotFound(new RestResponse
             {
                 Status = RestStatus.NotFound,
-                Meta = new RestMeta { ApiName = "Product" },
-                Data = new { message = "Product not found." }
+                Meta = new RestMeta
+                {
+                    ApiName = "Product"
+                },
+                Data = new
+                {
+                    message = "Product not found."
+                }
             });
         }
 
         return Ok(new RestResponse
         {
             Status = RestStatus.Ok,
-            Meta = new RestMeta { ApiName = "Product" },
-            Data = new { message = "Product deactivated successfully." }
+            Meta = new RestMeta
+            {
+                ApiName = "Product"
+            },
+            Data = new
+            {
+                message = "Product deactivated successfully."
+            }
         });
     }
 
@@ -696,7 +848,8 @@ public class ProductsController(
         Guid productId,
         Guid imageId)
     {
-        var path = $"/api/products/{productId}/images/{imageId}";
+        var path =
+            $"/api/products/{productId}/images/{imageId}";
 
         var result = await _dataAccessor.DeleteProductImageAsync(
             productId,
@@ -706,7 +859,10 @@ public class ProductsController(
         {
             return NotFound(CreateProductImageResponse(
                 RestStatus.NotFound,
-                new { message = "Product or image not found." },
+                new
+                {
+                    message = "Product or image not found."
+                },
                 "json/object",
                 path,
                 "DELETE"));
@@ -718,7 +874,7 @@ public class ProductsController(
         {
             try
             {
-                await localStorage.DeleteAsync(
+                await _localStorage.DeleteAsync(
                     result.ImageKey,
                     CancellationToken.None);
             }
@@ -768,8 +924,7 @@ public class ProductsController(
     }
 
     [Authorize(Roles = "Admin")]
-    [HttpDelete(
-    "{productId:guid}/specifications/{specificationId:guid}")]
+    [HttpDelete("{productId:guid}/specifications/{specificationId:guid}")]
     public async Task<IActionResult> DeleteProductSpecification(
         Guid productId,
         Guid specificationId)
@@ -786,7 +941,10 @@ public class ProductsController(
         {
             return NotFound(CreateSpecificationResponse(
                 RestStatus.NotFound,
-                new { message = "Product or specification not found." },
+                new
+                {
+                    message = "Product or specification not found."
+                },
                 "json/object",
                 path,
                 "DELETE"));
@@ -794,7 +952,10 @@ public class ProductsController(
 
         return Ok(CreateSpecificationResponse(
             RestStatus.Ok,
-            new { message = "Product specification deleted successfully." },
+            new
+            {
+                message = "Product specification deleted successfully."
+            },
             "json/object",
             path,
             "DELETE"));
@@ -815,9 +976,9 @@ public class ProductsController(
                 {
                     ApiName = "Product",
                     Links =
-                {
-                    ["self"] = $"/api/products/{id}/restore"
-                }
+                    {
+                        ["self"] = $"/api/products/{id}/restore"
+                    }
                 },
                 Data = new
                 {
@@ -835,10 +996,10 @@ public class ProductsController(
                 DataType = "json/object",
                 Manipulations = ["POST"],
                 Links =
-            {
-                ["self"] = $"/api/products/{id}/restore",
-                ["parent"] = "/api/products"
-            }
+                {
+                    ["self"] = $"/api/products/{id}/restore",
+                    ["parent"] = "/api/products"
+                }
             },
             Data = new
             {
@@ -847,8 +1008,8 @@ public class ProductsController(
         });
     }
 
-    [HttpPost("{id:guid}/images")]
     [Authorize(Roles = "Admin")]
+    [HttpPost("{id:guid}/images")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadProductImage(
         Guid id,
@@ -879,7 +1040,7 @@ public class ProductsController(
         {
             await using var stream = file.OpenReadStream();
 
-            storageKey = await localStorage.SaveAsync(
+            storageKey = await _localStorage.SaveAsync(
                 stream,
                 file.ContentType,
                 cancellationToken);
@@ -905,7 +1066,10 @@ public class ProductsController(
                 StatusCodes.Status500InternalServerError,
                 CreateProductImageResponse(
                     RestStatus.InternalServerError,
-                    new { message = "The image could not be stored." },
+                    new
+                    {
+                        message = "The image could not be stored."
+                    },
                     "json/object",
                     $"/api/products/{id}/images",
                     "POST"));
@@ -915,7 +1079,7 @@ public class ProductsController(
 
         try
         {
-            added = await dataAccessor.AddProductImageAsync(
+            added = await _dataAccessor.AddProductImageAsync(
                 id,
                 storageKey,
                 isPrimary,
@@ -924,44 +1088,16 @@ public class ProductsController(
         }
         catch
         {
-            // If database persistence fails, remove the newly stored file.
-            try
-            {
-                await localStorage.DeleteAsync(
-                    storageKey,
-                    CancellationToken.None);
-            }
-            catch (Exception cleanupException)
-            {
-                HttpContext.RequestServices
-                    .GetRequiredService<ILogger<ProductsController>>()
-                    .LogError(
-                        cleanupException,
-                        "Failed to remove image {StorageKey} after upload failure.",
-                        storageKey);
-            }
+            // The file was stored, but database persistence failed.
+            await TryDeleteStoredImageAsync(storageKey);
 
             throw;
         }
 
         if (added is null)
         {
-            // The product was not found, so the uploaded file is unnecessary.
-            try
-            {
-                await localStorage.DeleteAsync(
-                    storageKey,
-                    CancellationToken.None);
-            }
-            catch (Exception cleanupException)
-            {
-                HttpContext.RequestServices
-                    .GetRequiredService<ILogger<ProductsController>>()
-                    .LogError(
-                        cleanupException,
-                        "Failed to remove image {StorageKey} for a missing product.",
-                        storageKey);
-            }
+            // Product does not exist. Remove the uploaded file.
+            await TryDeleteStoredImageAsync(storageKey);
 
             return NotFound(new
             {
@@ -981,6 +1117,22 @@ public class ProductsController(
     }
 
 
+    private async Task TryDeleteStoredImageAsync(string storageKey)
+    {
+        try
+        {
+            await _localStorage.DeleteAsync(
+                storageKey,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to remove stored image {StorageKey} during cleanup.",
+                storageKey);
+        }
+    }
     private static bool IsLocalStorageProductImageKey(string imageKey)
     {
         if (string.IsNullOrWhiteSpace(imageKey) ||
@@ -991,14 +1143,16 @@ public class ProductsController(
             return false;
         }
 
-        var extension = Path.GetExtension(imageKey).ToLowerInvariant();
+        var extension =
+            Path.GetExtension(imageKey).ToLowerInvariant();
 
         if (extension is not (".jpg" or ".png" or ".webp"))
         {
             return false;
         }
 
-        var fileId = Path.GetFileNameWithoutExtension(imageKey);
+        var fileId =
+            Path.GetFileNameWithoutExtension(imageKey);
 
         return Guid.TryParseExact(fileId, "N", out _);
     }
@@ -1019,10 +1173,10 @@ public class ProductsController(
                 CacheTime = 0,
                 Manipulations = [method],
                 Links =
-            {
-                ["parent"] = "/api/products",
-                ["self"] = path
-            }
+                {
+                    ["parent"] = "/api/products",
+                    ["self"] = path
+                }
             },
             Data = data
         };
@@ -1044,10 +1198,10 @@ public class ProductsController(
                 CacheTime = 0,
                 Manipulations = [method],
                 Links =
-            {
-                ["parent"] = "/api/products",
-                ["self"] = path
-            }
+                {
+                    ["parent"] = "/api/products",
+                    ["self"] = path
+                }
             },
             Data = data
         };

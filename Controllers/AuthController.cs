@@ -2,10 +2,14 @@
 using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Models.Auth;
 using foxtrot_store_backend.Models.Rest;
+using foxtrot_store_backend.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 using Microsoft.IdentityModel.Tokens;
+
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -18,8 +22,15 @@ public class AuthController(
     DataAccessor dataAccessor,
     UserManager<IdentityUser> userManager,
     SignInManager<IdentityUser> signInManager,
-    IConfiguration configuration) : ControllerBase
+    IConfiguration configuration,
+    IStringLocalizer<SharedResources> localizer) : ControllerBase
 {
+    private static readonly HashSet<string> SupportedCultures =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "uk-UA",
+            "en-US"
+        };
 
     [HttpPost("register")]
     [AllowAnonymous]
@@ -72,8 +83,21 @@ public class AuthController(
         }
 
         var roles = await userManager.GetRolesAsync(user);
+
+        // Retrieve the user's saved locale.
+        var userClaims = await userManager.GetClaimsAsync(user);
+
+        var locale = NormalizeCultureCode(
+            userClaims.FirstOrDefault(
+                claim => claim.Type == "locale")?.Value);
+
         var expiresAt = DateTime.UtcNow.AddHours(1);
-        var token = CreateAccessToken(user, roles, expiresAt);
+
+        var token = CreateAccessToken(
+            user,
+            roles,
+            expiresAt,
+            locale);
 
         return Ok(new RestResponse
         {
@@ -82,7 +106,8 @@ public class AuthController(
             {
                 AccessToken = token,
                 ExpiresAtUtc = expiresAt,
-                User = await dataAccessor.GetUserByIdAsync(user.Id) ?? new UserDto()
+                User = await dataAccessor.GetUserByIdAsync(user.Id)
+                    ?? new UserDto()
             }
         });
     }
@@ -92,6 +117,7 @@ public class AuthController(
     public async Task<IActionResult> GetMe()
     {
         var userId = GetCurrentUserId();
+
         if (userId is null)
             return Unauthorized();
 
@@ -109,9 +135,11 @@ public class AuthController(
 
     [HttpPut("me")]
     [Authorize]
-    public async Task<IActionResult> UpdateMe(UserProfileUpdateRequest request)
+    public async Task<IActionResult> UpdateMe(
+        UserProfileUpdateRequest request)
     {
         var userId = GetCurrentUserId();
+
         if (userId is null)
             return Unauthorized();
 
@@ -130,11 +158,126 @@ public class AuthController(
         });
     }
 
-    [HttpPut("me/password")]
+    // Update the authenticated user's language.
+    [HttpPut("me/culture")]
     [Authorize]
-    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
+    public async Task<IActionResult> UpdateMyCulture(
+        UserCultureUpdateRequest request)
     {
         var userId = GetCurrentUserId();
+
+        if (userId is null)
+            return Unauthorized();
+
+        // Validate and normalize the requested culture.
+        var cultureCode = NormalizeCultureCode(request.CultureCode);
+
+        if (cultureCode is null)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Data = new
+                {
+                    message = localizer["InvalidCulture"].Value
+                }
+            });
+        }
+
+        var user = await userManager.FindByIdAsync(userId);
+
+        if (user is null)
+        {
+            return NotFound(new RestResponse
+            {
+                Status = RestStatus.NotFound,
+                Data = new
+                {
+                    message = "User not found."
+                }
+            });
+        }
+
+        // Retrieve existing locale claims.
+        var userClaims = await userManager.GetClaimsAsync(user);
+
+        var localeClaims = userClaims
+            .Where(claim => claim.Type == "locale")
+            .ToList();
+
+        var newLocaleClaim = new Claim("locale", cultureCode);
+
+        IdentityResult result;
+
+        if (localeClaims.Count == 0)
+        {
+            // The user does not have a locale claim yet.
+            result = await userManager.AddClaimAsync(
+                user,
+                newLocaleClaim);
+
+            if (!result.Succeeded)
+                return IdentityErrorResponse(result);
+        }
+        else
+        {
+            // Replace the existing locale claim.
+            var existingLocaleClaim = localeClaims[0];
+
+            if (existingLocaleClaim.Value != cultureCode)
+            {
+                result = await userManager.ReplaceClaimAsync(
+                    user,
+                    existingLocaleClaim,
+                    newLocaleClaim);
+
+                if (!result.Succeeded)
+                    return IdentityErrorResponse(result);
+            }
+
+            // Remove possible duplicate locale claims.
+            foreach (var duplicateClaim in localeClaims.Skip(1))
+            {
+                result = await userManager.RemoveClaimAsync(
+                    user,
+                    duplicateClaim);
+
+                if (!result.Succeeded)
+                    return IdentityErrorResponse(result);
+            }
+        }
+
+        // Issue a new JWT containing the updated locale.
+        var roles = await userManager.GetRolesAsync(user);
+
+        var expiresAt = DateTime.UtcNow.AddHours(1);
+
+        var token = CreateAccessToken(
+            user,
+            roles,
+            expiresAt,
+            cultureCode);
+
+        return Ok(new RestResponse
+        {
+            Status = RestStatus.Ok,
+            Data = new AuthResponseDto
+            {
+                AccessToken = token,
+                ExpiresAtUtc = expiresAt,
+                User = await dataAccessor.GetUserByIdAsync(user.Id)
+                    ?? new UserDto()
+            }
+        });
+    }
+
+    [HttpPut("me/password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword(
+        ChangePasswordRequest request)
+    {
+        var userId = GetCurrentUserId();
+
         if (userId is null)
             return Unauthorized();
 
@@ -184,7 +327,8 @@ public class AuthController(
 
     [HttpPost("users")]
     [Authorize(Roles = AppRoles.Admin)]
-    public async Task<IActionResult> CreateUser(UserCreateRequest request)
+    public async Task<IActionResult> CreateUser(
+        UserCreateRequest request)
     {
         var (user, result) = await dataAccessor.CreateUserAsync(
             request.UserName,
@@ -294,17 +438,41 @@ public class AuthController(
             ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
     }
 
+    private static string? NormalizeCultureCode(string? cultureCode)
+    {
+        if (string.IsNullOrWhiteSpace(cultureCode))
+            return null;
+
+        try
+        {
+            var normalized = CultureInfo.GetCultureInfo(
+                cultureCode.Trim()).Name;
+
+            return SupportedCultures.Contains(normalized)
+                ? normalized
+                : null;
+        }
+        catch (CultureNotFoundException)
+        {
+            return null;
+        }
+    }
+
     private string CreateAccessToken(
         IdentityUser user,
         IEnumerable<string> roles,
-        DateTime expiresAt)
+        DateTime expiresAt,
+        string? locale = null)
     {
         var key = configuration["Jwt:Key"]
             ?? throw new InvalidOperationException(
                 "JWT signing key is not configured.");
 
-        var issuer = configuration["Jwt:Issuer"] ?? "FoxtrotStore";
-        var audience = configuration["Jwt:Audience"] ?? "FoxtrotStoreClient";
+        var issuer = configuration["Jwt:Issuer"]
+            ?? "FoxtrotStore";
+
+        var audience = configuration["Jwt:Audience"]
+            ?? "FoxtrotStoreClient";
 
         var claims = new List<Claim>
         {
@@ -314,7 +482,14 @@ public class AuthController(
             new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty)
         };
 
-        claims.AddRange(roles.Select(role => new Claim("role", role)));
+        // Only add locale when the user has explicitly saved it.
+        if (!string.IsNullOrWhiteSpace(locale))
+        {
+            claims.Add(new Claim("locale", locale));
+        }
+
+        claims.AddRange(
+            roles.Select(role => new Claim("role", role)));
 
         var signingKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(key));
@@ -333,7 +508,8 @@ public class AuthController(
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private IActionResult IdentityErrorResponse(IdentityResult result)
+    private IActionResult IdentityErrorResponse(
+        IdentityResult result)
     {
         var errors = result.Errors
             .Select(error => new

@@ -1,8 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using foxtrot_store_backend.Models.Products.Translations;
 
 namespace foxtrot_store_backend.Models.Products;
 
-public class ProductCreateRequest
+public sealed class ProductCreateRequest
 {
     [Required]
     [StringLength(100, MinimumLength = 1)]
@@ -10,15 +11,7 @@ public class ProductCreateRequest
 
     [Required]
     [StringLength(150, MinimumLength = 1)]
-    public string Name { get; set; } = string.Empty;
-
-    [Required]
-    [StringLength(150, MinimumLength = 1)]
     public string Slug { get; set; } = string.Empty;
-
-    [Required]
-    [StringLength(5000)]
-    public string Description { get; set; } = string.Empty;
 
     [Range(0.01, 999999999)]
     public decimal Price { get; set; }
@@ -30,5 +23,10 @@ public class ProductCreateRequest
 
     public List<Guid> CategoryIds { get; set; } = [];
 
-    public List<ProductSpecificationCreateRequest> Specifications { get; set; } = [];
+    [Required]
+    [MinLength(1)]
+    public List<ProductTranslationRequest> Translations { get; set; } = [];
+
+    public List<ProductSpecificationCreateRequest> Specifications
+    { get; set; } = [];
 }

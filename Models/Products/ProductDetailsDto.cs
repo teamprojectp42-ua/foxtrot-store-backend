@@ -1,4 +1,6 @@
-﻿namespace foxtrot_store_backend.Models.Products;
+﻿using foxtrot_store_backend.Models.Products.Translations;
+
+namespace foxtrot_store_backend.Models.Products;
 
 public class ProductDetailsDto
 {
@@ -19,6 +21,8 @@ public class ProductDetailsDto
     public bool IsActive { get; set; }
 
     public string? BrandName { get; set; }
+
+    public List<ProductTranslationDto> Translations { get; set; } = [];
 
     public ProductPromotionPriceDto? ActivePromotion { get; set; }
 

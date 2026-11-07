@@ -1,24 +1,65 @@
-using foxtrot_store_backend.Services.LocalStorage;
+using System.Globalization;
 using System.Text;
+
 using foxtrot_store_backend.Data;
+using foxtrot_store_backend.Services;
+using foxtrot_store_backend.Services.LocalStorage;
+using foxtrot_store_backend.Services.Localization;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using foxtrot_store_backend.Services;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Localization
+builder.Services.AddLocalization(options =>
+{
+    options.ResourcesPath = "Resources";
+});
+
+var supportedCultures = new[]
+{
+    new CultureInfo("uk-UA"),
+    new CultureInfo("en-US")
+};
+
+builder.Services.Configure<RequestLocalizationOptions>(
+    options =>
+    {
+        options.DefaultRequestCulture =
+            new RequestCulture("uk-UA");
+
+        options.SupportedCultures = supportedCultures;
+        options.SupportedUICultures = supportedCultures;
+
+        options.FallBackToParentCultures = false;
+        options.FallBackToParentUICultures = false;
+
+        options.RequestCultureProviders =
+        [
+            new QueryStringRequestCultureProvider(),
+            new UserClaimRequestCultureProvider(),
+            new AcceptLanguageHeaderRequestCultureProvider()
+        ];
+    });
+
+// Database
 builder.Services.AddDbContext<DataContext>(options =>
     options.UseMySQL(
         builder.Configuration.GetConnectionString("DefaultConnection")!
     ));
 
+// Services
 builder.Services.AddScoped<DataAccessor>();
 builder.Services.AddScoped<IdentityInitializer>();
+
 builder.Services.AddControllersWithViews();
 
-// Реєстрація користувачів і ролей
+// Identity
 builder.Services
     .AddIdentityCore<IdentityUser>(options =>
     {
@@ -37,9 +78,10 @@ builder.Services
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<DataContext>()
     .AddSignInManager()
-    .AddDefaultTokenProviders();
+    .AddDefaultTokenProviders()
+    .AddErrorDescriber<LocalizedIdentityErrorDescriber>();
 
-// Налаштування JWT
+// JWT
 var jwtKey = builder.Configuration["Jwt:Key"]
     ?? throw new InvalidOperationException(
         "JWT signing key is not configured."
@@ -56,6 +98,7 @@ builder.Services
     {
         options.DefaultAuthenticateScheme =
             JwtBearerDefaults.AuthenticationScheme;
+
         options.DefaultChallengeScheme =
             JwtBearerDefaults.AuthenticationScheme;
     })
@@ -63,31 +106,33 @@ builder.Services
     {
         options.MapInboundClaims = false;
 
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuer = jwtIssuer,
+        options.TokenValidationParameters =
+            new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = jwtIssuer,
 
-            ValidateAudience = true,
-            ValidAudience = jwtAudience,
+                ValidateAudience = true,
+                ValidAudience = jwtAudience,
 
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtKey)
-            ),
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(jwtKey)
+                ),
 
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromSeconds(30),
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromSeconds(30),
 
-            NameClaimType = "unique_name",
-            RoleClaimType = "role"
-        };
+                NameClaimType = "unique_name",
+                RoleClaimType = "role"
+            };
     });
 
 builder.Services.AddAuthorization();
 
 builder.Services.AddLocalStorage(builder.Configuration);
 
+// CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -103,6 +148,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Identity initialization
 using (var scope = app.Services.CreateScope())
 {
     var initializer = scope.ServiceProvider
@@ -117,12 +163,19 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
 app.UseRouting();
 
 app.UseCors("Frontend");
+
+// Authentication must run before localization,
+// because the localization provider reads the "locale" claim.
 app.UseAuthentication();
+
+app.UseRequestLocalization();
+
 app.UseAuthorization();
-app.MapStaticAssets();
+
 app.MapControllers();
 
 app.Run();

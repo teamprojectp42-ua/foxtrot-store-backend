@@ -1,5 +1,4 @@
-﻿
-namespace foxtrot_store_backend.Models.Rest;
+﻿namespace foxtrot_store_backend.Models.Rest;
 
 public class RestMetaPagination
 {

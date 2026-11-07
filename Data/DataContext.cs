@@ -28,6 +28,14 @@ public class DataContext(DbContextOptions<DataContext> options)
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
 
+    public DbSet<ProductTranslation> ProductTranslations
+    => Set<ProductTranslation>();
+
+    public DbSet<ProductSpecificationTranslation>
+        ProductSpecificationTranslations
+        => Set<ProductSpecificationTranslation>();
+
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -83,14 +91,6 @@ public class DataContext(DbContextOptions<DataContext> options)
         });
         modelBuilder.Entity<ProductSpecification>(entity =>
         {
-            entity.Property(specification => specification.Name)
-                .HasMaxLength(150)
-                .IsRequired();
-
-            entity.Property(specification => specification.Value)
-                .HasMaxLength(1000)
-                .IsRequired();
-
             entity.HasIndex(specification => new
             {
                 specification.ProductId,
@@ -102,12 +102,88 @@ public class DataContext(DbContextOptions<DataContext> options)
                 .HasForeignKey(specification => specification.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasIndex(specification => new
+            entity.HasAlternateKey(specification => new
             {
-                specification.ProductId,
-                specification.Name
-            }).IsUnique();
+                specification.Id,
+                specification.ProductId
+            });
         });
+
+        modelBuilder.Entity<ProductTranslation>(entity =>
+        {
+            entity.HasKey(translation => translation.Id);
+
+            entity.Property(translation => translation.CultureCode)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(translation => translation.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(translation => translation.Description)
+                .HasMaxLength(5000)
+                .IsRequired();
+
+            entity.HasIndex(translation => new
+            {
+                translation.ProductId,
+                translation.CultureCode
+            }).IsUnique();
+
+            entity.HasOne(translation => translation.Product)
+                .WithMany(product => product.Translations)
+                .HasForeignKey(translation => translation.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<ProductSpecificationTranslation>(entity =>
+        {
+            entity.HasKey(translation => translation.Id);
+
+            entity.Property(translation => translation.CultureCode)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(translation => translation.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(translation => translation.Value)
+                .HasMaxLength(1000)
+                .IsRequired();
+
+            // Один перевод на одну характеристику и один язык.
+            entity.HasIndex(translation => new
+            {
+                translation.SpecificationId,
+                translation.CultureCode
+            }).IsUnique();
+
+            // Уникальность названия характеристики в пределах товара и языка.
+            entity.HasIndex(translation => new
+            {
+                translation.ProductId,
+                translation.CultureCode,
+                translation.Name
+            }).IsUnique();
+
+            // Составной FK: ProductId перевода должен совпадать
+            // с ProductId родительской характеристики.
+            entity.HasOne(translation => translation.Specification)
+                .WithMany(specification => specification.Translations)
+                .HasForeignKey(translation => new
+                {
+                    translation.SpecificationId,
+                    translation.ProductId
+                })
+                .HasPrincipalKey(specification => new
+                {
+                    specification.Id,
+                    specification.ProductId
+                })
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
 
         modelBuilder.Entity<Brand>(entity =>
         {
