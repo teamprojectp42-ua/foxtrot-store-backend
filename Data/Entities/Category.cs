@@ -1,15 +1,10 @@
-﻿
-namespace foxtrot_store_backend.Data.Entities;
+﻿namespace foxtrot_store_backend.Data.Entities;
 
 public class Category
 {
     public Guid Id { get; set; }
 
-    public string Name { get; set; } = string.Empty;
-
     public string Slug { get; set; } = string.Empty;
-
-    public string? Description { get; set; }
 
     public Guid? ParentCategoryId { get; set; }
 
@@ -21,9 +16,12 @@ public class Category
 
     public Category? ParentCategory { get; set; }
 
-
-    public ICollection<Category> ChildCategories { get; set; } = new List<Category>();
+    public ICollection<Category> ChildCategories { get; set; }
+        = new List<Category>();
 
     public ICollection<ProductCategory> ProductCategories { get; set; }
-    = new List<ProductCategory>();
+        = new List<ProductCategory>();
+
+    public ICollection<CategoryTranslation> Translations { get; set; }
+        = new List<CategoryTranslation>();
 }

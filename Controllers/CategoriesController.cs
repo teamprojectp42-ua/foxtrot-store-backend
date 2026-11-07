@@ -5,6 +5,8 @@ using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using foxtrot_store_backend.Services.LocalStorage;
+using System.Globalization;
+using foxtrot_store_backend.Constants;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -19,11 +21,18 @@ public class CategoriesController(
     private readonly ILocalStorageService _localStorage = localStorage;
     private readonly ILogger<CategoriesController> _logger = logger;
 
+    private string CurrentCultureCode =>
+        CultureInfo.CurrentUICulture.Name;
+    private bool IsAdmin =>
+        User.IsInRole(AppRoles.Admin);
+
 
     [HttpGet]
     public async Task<IActionResult> GetCategories()
     {
-        var categories = await _dataAccessor.GetCategoriesAsync();
+        var categories = await _dataAccessor.GetCategoriesAsync(
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         return Ok(new RestResponse
         {
@@ -34,7 +43,10 @@ public class CategoriesController(
                 DataType = "json/array",
                 CacheTime = 0,
                 Manipulations = ["GET"],
-                Links = { ["self"] = "/api/categories" }
+                Links =
+            {
+                ["self"] = "/api/categories"
+            }
             },
             Data = categories
         });
@@ -43,7 +55,8 @@ public class CategoriesController(
     [HttpGet("tree")]
     public async Task<IActionResult> GetCategoryTree()
     {
-        var categories = await _dataAccessor.GetCategoryTreeAsync();
+        var categories = await _dataAccessor.GetCategoryTreeAsync(
+            CurrentCultureCode);
 
         return Ok(new RestResponse
         {
@@ -54,7 +67,10 @@ public class CategoriesController(
                 DataType = "json/array",
                 CacheTime = 0,
                 Manipulations = ["GET"],
-                Links = { ["self"] = "/api/categories/tree" }
+                Links =
+            {
+                ["self"] = "/api/categories/tree"
+            }
             },
             Data = categories
         });
@@ -63,7 +79,10 @@ public class CategoriesController(
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetCategoryById(Guid id)
     {
-        var category = await _dataAccessor.GetCategoryByIdAsync(id);
+        var category = await _dataAccessor.GetCategoryByIdAsync(
+            id,
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         if (category is null)
         {
@@ -73,9 +92,15 @@ public class CategoriesController(
                 Meta = new RestMeta
                 {
                     ApiName = "Category",
-                    Links = { ["self"] = $"/api/categories/{id}" }
+                    Links =
+                {
+                    ["self"] = $"/api/categories/{id}"
+                }
                 },
-                Data = new { message = "Category not found." }
+                Data = new
+                {
+                    message = "Category not found."
+                }
             });
         }
 
@@ -89,10 +114,10 @@ public class CategoriesController(
                 CacheTime = 0,
                 Manipulations = ["GET"],
                 Links =
-                {
-                    ["parent"] = "/api/categories",
-                    ["self"] = $"/api/categories/{id}"
-                }
+            {
+                ["parent"] = "/api/categories",
+                ["self"] = $"/api/categories/{id}"
+            }
             },
             Data = category
         });
@@ -109,7 +134,10 @@ public class CategoriesController(
                 Meta = new RestMeta
                 {
                     ApiName = "Category",
-                    Links = { ["self"] = $"/api/categories/slug/{slug}" }
+                    Links =
+                {
+                    ["self"] = $"/api/categories/slug/{slug}"
+                }
                 },
                 Data = new
                 {
@@ -118,7 +146,10 @@ public class CategoriesController(
             });
         }
 
-        var category = await _dataAccessor.GetCategoryBySlugAsync(slug);
+        var category = await _dataAccessor.GetCategoryBySlugAsync(
+            slug,
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         if (category is null)
         {
@@ -128,9 +159,15 @@ public class CategoriesController(
                 Meta = new RestMeta
                 {
                     ApiName = "Category",
-                    Links = { ["self"] = $"/api/categories/slug/{slug}" }
+                    Links =
+                {
+                    ["self"] = $"/api/categories/slug/{slug}"
+                }
                 },
-                Data = new { message = "Category not found." }
+                Data = new
+                {
+                    message = "Category not found."
+                }
             });
         }
 
@@ -144,10 +181,10 @@ public class CategoriesController(
                 CacheTime = 0,
                 Manipulations = ["GET"],
                 Links =
-                {
-                    ["parent"] = "/api/categories",
-                    ["self"] = $"/api/categories/slug/{slug}"
-                }
+            {
+                ["parent"] = "/api/categories",
+                ["self"] = $"/api/categories/slug/{slug}"
+            }
             },
             Data = category
         });
@@ -155,8 +192,8 @@ public class CategoriesController(
 
     [HttpGet("{id:guid}/products")]
     public async Task<IActionResult> GetCategoryProducts(
-    Guid id,
-    [FromQuery] ProductCatalogQuery query)
+        Guid id,
+        [FromQuery] ProductCatalogQuery query)
     {
         if (query.Page < 1)
         {
@@ -219,10 +256,10 @@ public class CategoriesController(
 
         var allowedSortFields = new[]
         {
-        "name",
-        "price",
-        "createdat"
-    };
+            "name",
+            "price",
+            "createdat"
+        };
 
         if (string.IsNullOrWhiteSpace(query.SortBy) ||
             !allowedSortFields.Contains(
@@ -292,7 +329,9 @@ public class CategoriesController(
         // Always use the category ID from the route.
         query.CategoryId = id;
 
-        var result = await _dataAccessor.GetProductsAsync(query);
+        var result = await _dataAccessor.GetProductsAsync(
+            query,
+            CurrentCultureCode);
 
         return Ok(new RestResponse
         {
@@ -325,7 +364,6 @@ public class CategoriesController(
         });
     }
 
-
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateCategory(
@@ -334,7 +372,9 @@ public class CategoriesController(
         try
         {
             var category =
-                await _dataAccessor.CreateCategoryAsync(request);
+                await _dataAccessor.CreateCategoryAsync(
+                    request,
+                    CurrentCultureCode);
 
             return StatusCode(StatusCodes.Status201Created,
                 new RestResponse
@@ -383,7 +423,10 @@ public class CategoriesController(
         try
         {
             var category =
-                await _dataAccessor.UpdateCategoryAsync(id, request);
+                await _dataAccessor.UpdateCategoryAsync(
+                    id,
+                    request,
+                    CurrentCultureCode);
 
             if (category is null)
             {
@@ -636,9 +679,9 @@ public class CategoriesController(
     [HttpPost("{id:guid}/image")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadCategoryImage(
-    Guid id,
-    [FromForm] IFormFile? file,
-    CancellationToken cancellationToken)
+        Guid id,
+        [FromForm] IFormFile? file,
+        CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
         {

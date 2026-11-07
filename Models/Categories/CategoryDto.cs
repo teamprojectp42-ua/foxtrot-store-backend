@@ -1,4 +1,6 @@
-﻿namespace foxtrot_store_backend.Models.Categories;
+﻿using foxtrot_store_backend.Models.Categories.Translations;
+
+namespace foxtrot_store_backend.Models.Categories;
 
 public class CategoryDto
 {
@@ -16,4 +18,5 @@ public class CategoryDto
 
     public int SortOrder { get; set; }
 
+    public List<CategoryTranslationDto> Translations { get; set; } = [];
 }

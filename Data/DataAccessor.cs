@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using MySql.Data.MySqlClient;
 using System.Globalization;
 using foxtrot_store_backend.Models.Products.Translations;
+using foxtrot_store_backend.Models.Categories.Translations;
 
 namespace foxtrot_store_backend.Data;
 
@@ -464,8 +465,20 @@ public class DataAccessor(
                         productCategory.Category.IsActive)
                     .OrderBy(productCategory =>
                         productCategory.Category.SortOrder)
+                    .ThenBy(productCategory =>
+                        productCategory.CategoryId)
                     .Select(productCategory =>
-                        productCategory.Category.Name)
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        string.Empty)
                     .ToList()
             })
             .ToListAsync();
@@ -557,8 +570,20 @@ public class DataAccessor(
                         productCategory.Category.IsActive)
                     .OrderBy(productCategory =>
                         productCategory.Category.SortOrder)
+                    .ThenBy(productCategory =>
+                        productCategory.CategoryId)
                     .Select(productCategory =>
-                        productCategory.Category.Name)
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        string.Empty)
                     .ToList(),
 
                 Images = product.Images
@@ -695,8 +720,20 @@ public class DataAccessor(
                         productCategory.Category.IsActive)
                     .OrderBy(productCategory =>
                         productCategory.Category.SortOrder)
+                    .ThenBy(productCategory =>
+                        productCategory.CategoryId)
                     .Select(productCategory =>
-                        productCategory.Category.Name)
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        string.Empty)
                     .ToList(),
 
                 Images = product.Images
@@ -1011,8 +1048,20 @@ public class DataAccessor(
                         productCategory.Category.IsActive)
                     .OrderBy(productCategory =>
                         productCategory.Category.SortOrder)
+                    .ThenBy(productCategory =>
+                        productCategory.CategoryId)
                     .Select(productCategory =>
-                        productCategory.Category.Name)
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        productCategory.Category.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        string.Empty)
                     .ToList(),
 
                 Images = product.Images
@@ -1975,149 +2024,162 @@ public class DataAccessor(
         return $"/api/products/images/{Uri.EscapeDataString(imageKey)}";
     }
 
+
     // Categories
-    public async Task<List<CategoryDto>> GetCategoriesAsync()
+
+    public async Task<List<CategoryDto>> GetCategoriesAsync(
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var categories = await _dataContext.Categories
             .AsNoTracking()
+            .Include(category => category.Translations)
             .Where(category => category.IsActive)
             .OrderBy(category => category.SortOrder)
-            .ThenBy(category => category.Name)
-            .Select(category => new CategoryDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                Description = category.Description,
-                ImageUrl = category.ImageUrl,
-                ParentCategoryId = category.ParentCategoryId,
-                SortOrder = category.SortOrder
-            })
             .ToListAsync();
 
-        foreach (var category in categories)
-        {
-            category.ImageUrl = BuildCategoryImageUrl(category.ImageUrl);
-        }
-
-        return categories;
+        return categories
+            .Select(category =>
+                MapCategoryDto(
+                    category,
+                    cultureCode,
+                    includeTranslations))
+            .OrderBy(category => category.SortOrder)
+            .ThenBy(
+                category => category.Name,
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
-    public async Task<CategoryDto?> GetCategoryByIdAsync(Guid id)
+    public async Task<CategoryDto?> GetCategoryByIdAsync(
+        Guid id,
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var category = await _dataContext.Categories
             .AsNoTracking()
-            .Where(category =>
+            .Include(category => category.Translations)
+            .FirstOrDefaultAsync(category =>
                 category.Id == id &&
-                category.IsActive)
-            .Select(category => new CategoryDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                Description = category.Description,
-                ImageUrl = category.ImageUrl,
-                ParentCategoryId = category.ParentCategoryId,
-                SortOrder = category.SortOrder
-            })
-            .FirstOrDefaultAsync();
+                category.IsActive);
 
-        if (category is not null)
+        return category is null
+            ? null
+            : MapCategoryDto(
+                category,
+                cultureCode,
+                includeTranslations);
+    }
+    public async Task<CategoryDto?> GetCategoryBySlugAsync(
+        string slug,
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
+    {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        if (string.IsNullOrWhiteSpace(slug))
         {
-            category.ImageUrl = BuildCategoryImageUrl(category.ImageUrl);
+            return null;
         }
 
-        return category;
-    }
-    public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
-    {
+        slug = slug.Trim().ToLowerInvariant();
+
         var category = await _dataContext.Categories
             .AsNoTracking()
-            .Where(category =>
+            .Include(category => category.Translations)
+            .FirstOrDefaultAsync(category =>
                 category.Slug == slug &&
-                category.IsActive)
-            .Select(category => new CategoryDto
-            {
-                Id = category.Id,
-                Name = category.Name,
-                Slug = category.Slug,
-                Description = category.Description,
-                ImageUrl = category.ImageUrl,
-                ParentCategoryId = category.ParentCategoryId,
-                SortOrder = category.SortOrder
-            })
-            .FirstOrDefaultAsync();
+                category.IsActive);
 
-        if (category is not null)
-        {
-            category.ImageUrl = BuildCategoryImageUrl(category.ImageUrl);
-        }
-
-        return category;
+        return category is null
+            ? null
+            : MapCategoryDto(
+                category,
+                cultureCode,
+                includeTranslations);
     }
     public async Task<bool> CategoryExistsAsync(Guid id)
     {
         return await _dataContext.Categories
             .AsNoTracking()
-            .AnyAsync(category => category.Id == id && category.IsActive);
+            .AnyAsync(category =>
+                category.Id == id &&
+                category.IsActive);
     }
     public async Task<CategoryDto> CreateCategoryAsync(
-        CategoryCreateRequest request)
+        CategoryCreateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
-        var id = Guid.NewGuid();
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        var translations = NormalizeCategoryTranslations(
+            request.Translations);
+
         var slug = request.Slug.Trim().ToLowerInvariant();
 
         if (await _dataContext.Categories.AnyAsync(
-            c => c.Slug == slug))
+            category => category.Slug == slug))
         {
             throw new InvalidOperationException(
                 "A category with this slug already exists.");
         }
 
+        var categoryId = await GetDbIdentityAsync();
+
         await EnsureValidParentCategoryAsync(
-            id,
+            categoryId,
             request.ParentCategoryId);
 
         var category = new Category
         {
-            Id = id,
-            Name = request.Name.Trim(),
+            Id = categoryId,
             Slug = slug,
-            Description = request.Description?.Trim(),
             ParentCategoryId = request.ParentCategoryId,
             SortOrder = request.SortOrder,
             IsActive = true
         };
 
         _dataContext.Categories.Add(category);
-        await _dataContext.SaveChangesAsync();
 
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Slug = category.Slug,
-            Description = category.Description,
-            ImageUrl = BuildCategoryImageUrl(category.ImageUrl),
-            ParentCategoryId = category.ParentCategoryId,
-            SortOrder = category.SortOrder
-        };
+        await SyncCategoryTranslationsAsync(
+            category,
+            translations);
+
+        await SaveChangesOrThrowConflictAsync();
+
+        return MapCategoryDto(
+            category,
+            cultureCode,
+            includeTranslations: true);
     }
     public async Task<CategoryDto?> UpdateCategoryAsync(
         Guid id,
-        CategoryUpdateRequest request)
+        CategoryUpdateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var category = await _dataContext.Categories
-            .FirstOrDefaultAsync(c => c.Id == id);
+            .Include(category => category.Translations)
+            .FirstOrDefaultAsync(category => category.Id == id);
 
         if (category is null)
         {
             return null;
         }
 
+        var translations = NormalizeCategoryTranslations(
+            request.Translations);
+
         var slug = request.Slug.Trim().ToLowerInvariant();
 
         if (await _dataContext.Categories.AnyAsync(
-            c => c.Slug == slug && c.Id != id))
+            existing =>
+                existing.Slug == slug &&
+                existing.Id != id))
         {
             throw new InvalidOperationException(
                 "A category with this slug already exists.");
@@ -2127,29 +2189,25 @@ public class DataAccessor(
             id,
             request.ParentCategoryId);
 
-        category.Name = request.Name.Trim();
         category.Slug = slug;
-        category.Description = request.Description?.Trim();
         category.ParentCategoryId = request.ParentCategoryId;
         category.SortOrder = request.SortOrder;
 
-        await _dataContext.SaveChangesAsync();
+        await SyncCategoryTranslationsAsync(
+            category,
+            translations);
 
-        return new CategoryDto
-        {
-            Id = category.Id,
-            Name = category.Name,
-            Slug = category.Slug,
-            Description = category.Description,
-            ImageUrl = BuildCategoryImageUrl(category.ImageUrl),
-            ParentCategoryId = category.ParentCategoryId,
-            SortOrder = category.SortOrder
-        };
+        await SaveChangesOrThrowConflictAsync();
+
+        return MapCategoryDto(
+            category,
+            cultureCode,
+            includeTranslations: true);
     }
     public async Task<(bool Updated, string? PreviousImageKey)> SetCategoryImageAsync(
-        Guid categoryId,
-        string imageKey,
-        CancellationToken cancellationToken = default)
+            Guid categoryId,
+            string imageKey,
+            CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(imageKey))
         {
@@ -2181,7 +2239,9 @@ public class DataAccessor(
     public async Task<bool> DeleteCategoryAsync(Guid id)
     {
         var category = await _dataContext.Categories
-            .FirstOrDefaultAsync(c => c.Id == id && c.IsActive);
+            .FirstOrDefaultAsync(category =>
+                category.Id == id &&
+                category.IsActive);
 
         if (category is null)
         {
@@ -2208,7 +2268,9 @@ public class DataAccessor(
     public async Task<bool> RestoreCategoryAsync(Guid id)
     {
         var category = await _dataContext.Categories
-            .FirstOrDefaultAsync(c => c.Id == id && !c.IsActive);
+            .FirstOrDefaultAsync(category =>
+                category.Id == id &&
+                !category.IsActive);
 
         if (category is null)
         {
@@ -2246,13 +2308,15 @@ public class DataAccessor(
 
         var parents = await _dataContext.Categories
             .AsNoTracking()
-            .Where(c => c.IsActive)
-            .Select(c => new
+            .Where(category => category.IsActive)
+            .Select(category => new
             {
-                c.Id,
-                c.ParentCategoryId
+                category.Id,
+                category.ParentCategoryId
             })
-            .ToDictionaryAsync(c => c.Id, c => c.ParentCategoryId);
+            .ToDictionaryAsync(
+                category => category.Id,
+                category => category.ParentCategoryId);
 
         if (!parents.ContainsKey(parentCategoryId.Value))
         {
@@ -2283,9 +2347,11 @@ public class DataAccessor(
             }
         }
     }
-    public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
+    public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync(
+        string cultureCode = DefaultCultureCode)
     {
-        var categories = await GetCategoriesAsync();
+        var categories = await GetCategoriesAsync(
+            cultureCode);
 
         var nodes = categories.ToDictionary(
             category => category.Id,
@@ -2295,7 +2361,7 @@ public class DataAccessor(
                 Name = category.Name,
                 Slug = category.Slug,
                 SortOrder = category.SortOrder,
-                ImageUrl = category.ImageUrl,
+                ImageUrl = category.ImageUrl
             });
 
         var roots = new List<CategoryTreeDto>();
@@ -2305,7 +2371,9 @@ public class DataAccessor(
             var node = nodes[category.Id];
 
             if (category.ParentCategoryId.HasValue &&
-                nodes.TryGetValue(category.ParentCategoryId.Value, out var parent))
+                nodes.TryGetValue(
+                    category.ParentCategoryId.Value,
+                    out var parent))
             {
                 parent.Children.Add(node);
             }
@@ -2319,11 +2387,15 @@ public class DataAccessor(
 
         return roots;
     }
-    private static void SortCategoryTree(List<CategoryTreeDto> categories)
+
+
+    private static void SortCategoryTree(
+        List<CategoryTreeDto> categories)
     {
         categories.Sort((first, second) =>
         {
-            var orderComparison = first.SortOrder.CompareTo(second.SortOrder);
+            var orderComparison =
+                first.SortOrder.CompareTo(second.SortOrder);
 
             return orderComparison != 0
                 ? orderComparison
@@ -2338,8 +2410,161 @@ public class DataAccessor(
             SortCategoryTree(category.Children);
         }
     }
+    private static CategoryDto MapCategoryDto(
+        Category category,
+        string cultureCode,
+        bool includeTranslations = false)
+    {
+        var localizedTranslation =
+            category.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == cultureCode)
+            ??
+            category.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == DefaultCultureCode);
 
+        return new CategoryDto
+        {
+            Id = category.Id,
 
+            Name = localizedTranslation?.Name ?? string.Empty,
+
+            Slug = category.Slug,
+
+            Description = localizedTranslation?.Description,
+
+            ImageUrl = BuildCategoryImageUrl(category.ImageUrl),
+
+            ParentCategoryId = category.ParentCategoryId,
+
+            SortOrder = category.SortOrder,
+
+            Translations = includeTranslations
+                ? category.Translations
+                    .OrderBy(translation => translation.CultureCode)
+                    .Select(translation =>
+                        new CategoryTranslationDto
+                        {
+                            CultureCode = translation.CultureCode,
+                            Name = translation.Name,
+                            Description = translation.Description
+                        })
+                    .ToList()
+                : []
+        };
+    }
+    private static List<CategoryTranslationRequest> NormalizeCategoryTranslations(
+            List<CategoryTranslationRequest>? translations)
+    {
+        if (translations is null || translations.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one category translation is required.");
+        }
+
+        var result = new List<CategoryTranslationRequest>();
+
+        var cultures = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (translation is null)
+            {
+                throw new ArgumentException(
+                    "Category translation cannot be null.");
+            }
+
+            var culture = ValidateTranslationCultureCode(
+                translation.CultureCode);
+
+            if (!cultures.Add(culture))
+            {
+                throw new ArgumentException(
+                    $"Duplicate category translation culture: {culture}.");
+            }
+
+            var name = translation.Name?.Trim();
+            var description = translation.Description?.Trim();
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException(
+                    $"Category name is required for {culture}.");
+            }
+
+            if (name.Length > 150 ||
+                description?.Length > 1000)
+            {
+                throw new ArgumentException(
+                    $"Category translation exceeds allowed length for {culture}.");
+            }
+
+            result.Add(new CategoryTranslationRequest
+            {
+                CultureCode = culture,
+                Name = name,
+                Description = description
+            });
+        }
+
+        if (!cultures.Contains(DefaultCultureCode))
+        {
+            throw new ArgumentException(
+                "The uk-UA category translation is required.");
+        }
+
+        return result;
+    }
+    private async Task SyncCategoryTranslationsAsync(
+        Category category,
+        List<CategoryTranslationRequest> translations)
+    {
+        var incoming = translations.ToDictionary(
+            translation => translation.CultureCode,
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var existing in category.Translations.ToList())
+        {
+            if (!incoming.TryGetValue(
+                    existing.CultureCode,
+                    out var updated))
+            {
+                _dataContext.CategoryTranslations.Remove(existing);
+                category.Translations.Remove(existing);
+                continue;
+            }
+
+            existing.Name = updated.Name;
+            existing.Description = updated.Description;
+        }
+
+        var existingCultures = category.Translations
+            .Select(translation => translation.CultureCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (existingCultures.Contains(translation.CultureCode))
+            {
+                continue;
+            }
+
+            var entity = new CategoryTranslation
+            {
+                Id = await GetDbIdentityAsync(),
+                CategoryId = category.Id,
+                CultureCode = translation.CultureCode,
+                Name = translation.Name,
+                Description = translation.Description
+            };
+
+            category.Translations.Add(entity);
+
+            _dataContext.CategoryTranslations.Add(entity);
+        }
+    }
     private static string? BuildCategoryImageUrl(string? imageKey)
     {
         if (string.IsNullOrWhiteSpace(imageKey))
@@ -2347,7 +2572,6 @@ public class DataAccessor(
             return null;
         }
 
-        // Preserve existing absolute HTTP(S) image URLs.
         if (Uri.TryCreate(imageKey, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp ||
              uri.Scheme == Uri.UriSchemeHttps))
@@ -4504,7 +4728,7 @@ public class DataAccessor(
             when (IsDuplicateKeyViolation(exception))
         {
             throw new InvalidOperationException(
-                "A product or one of its related records conflicts " +
+                "A record or one of its related records conflicts " +
                 "with an existing unique value.",
                 exception);
         }

@@ -13,8 +13,10 @@ public class DataContext(DbContextOptions<DataContext> options)
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
     public DbSet<ProductSpecification> ProductSpecifications
         => Set<ProductSpecification>();
-    
+
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<CategoryTranslation> CategoryTranslations
+        => Set<CategoryTranslation>();
 
     public DbSet<Promotion> Promotions => Set<Promotion>();
     public DbSet<PromotionProduct> PromotionProducts
@@ -207,18 +209,10 @@ public class DataContext(DbContextOptions<DataContext> options)
 
         modelBuilder.Entity<Category>(entity =>
         {
-            entity.Property(category => category.Name)
-                .HasMaxLength(150)
-                .IsRequired();
-
             entity.Property(category => category.Slug)
                 .HasMaxLength(150)
                 .IsRequired();
 
-            entity.Property(category => category.Description)
-                .HasMaxLength(1000);
-
-            // Изображение категории
             entity.Property(category => category.ImageUrl)
                 .HasMaxLength(2048);
 
@@ -230,6 +224,34 @@ public class DataContext(DbContextOptions<DataContext> options)
                 .HasForeignKey(category => category.ParentCategoryId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
+        modelBuilder.Entity<CategoryTranslation>(entity =>
+        {
+            entity.HasKey(translation => translation.Id);
+
+            entity.Property(translation => translation.CultureCode)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(translation => translation.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(translation => translation.Description)
+                .HasMaxLength(1000);
+
+            // One translation per category and culture.
+            entity.HasIndex(translation => new
+            {
+                translation.CategoryId,
+                translation.CultureCode
+            }).IsUnique();
+
+            entity.HasOne(translation => translation.Category)
+                .WithMany(category => category.Translations)
+                .HasForeignKey(translation => translation.CategoryId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
 
         modelBuilder.Entity<Promotion>(entity =>
         {
