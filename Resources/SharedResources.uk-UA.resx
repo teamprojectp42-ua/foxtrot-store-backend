@@ -13,6 +13,21 @@
 		<value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
 	</resheader>
 
+	<data name="The {0} field is required." xml:space="preserve">
+    <value>Поле {0} є обов'язковим.</value>
+</data>
+
+	<data name="The {0} field is not a valid e-mail address." xml:space="preserve">
+    <value>Поле {0} містить некоректну електронну адресу.</value>
+</data>
+
+	<data name="The field {0} must be a string with a maximum length of {1}." xml:space="preserve">
+    <value>Поле {0} повинно містити не більше ніж {1} символів.</value>
+</data>
+
+	<data name="The field {0} must be a string with a minimum length of {1}." xml:space="preserve">
+    <value>Поле {0} повинно містити щонайменше {1} символів.</value>
+</data>
 	<data name="ProductNotFound" xml:space="preserve">
     <value>Товар не знайдено.</value>
   </data>
@@ -83,4 +98,31 @@
 	<data name="Identity_LoginAlreadyAssociated" xml:space="preserve">
     <value>Цей спосіб входу вже прив'язаний до іншого користувача.</value>
   </data>
+<data name="Auth_InvalidCredentials" xml:space="preserve">
+    <value>Неправильна електронна адреса або пароль.</value>
+</data>
+	<data name="Auth_UserNotFound" xml:space="preserve">
+    <value>Користувача не знайдено.</value>
+</data>
+	<data name="Auth_PasswordChanged" xml:space="preserve">
+    <value>Пароль успішно змінено.</value>
+</data>
+	<data name="Auth_CannotDeleteOwnAccount" xml:space="preserve">
+    <value>Ви не можете видалити власний обліковий запис через цей метод.</value>
+</data>
+	<data name="Auth_UserDeleted" xml:space="preserve">
+    <value>Користувача успішно видалено.</value>
+</data>
+	<data name="Auth_InvalidRole" xml:space="preserve">
+    <value>Недійсна роль. Допустимі ролі: User, Manager або Admin.</value>
+</data>
+	<data name="Auth_RoleNotFound" xml:space="preserve">
+    <value>Вказана роль не існує.</value>
+</data>
+	<data name="Auth_LastAdmin" xml:space="preserve">
+    <value>Не можна видалити або позбавити ролі останнього адміністратора.</value>
+</data>
+	<data name="Auth_UserHasOrders" xml:space="preserve">
+    <value>Неможливо видалити користувача, який має замовлення.</value>
+</data>
 </root>

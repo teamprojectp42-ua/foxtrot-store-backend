@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using foxtrot_store_backend.Resources;
 
 using foxtrot_store_backend.Data;
 using foxtrot_store_backend.Services;
@@ -57,7 +58,14 @@ builder.Services.AddDbContext<DataContext>(options =>
 builder.Services.AddScoped<DataAccessor>();
 builder.Services.AddScoped<IdentityInitializer>();
 
-builder.Services.AddControllersWithViews();
+builder.Services
+    .AddControllersWithViews()
+    .AddDataAnnotationsLocalization(options =>
+    {
+        options.DataAnnotationLocalizerProvider =
+            (type, factory) =>
+                factory.Create(typeof(SharedResources));
+    });
 
 // Identity
 builder.Services

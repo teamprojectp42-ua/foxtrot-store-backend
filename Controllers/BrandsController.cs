@@ -5,6 +5,7 @@ using foxtrot_store_backend.Models.Products;
 using foxtrot_store_backend.Models.Rest;
 using Microsoft.AspNetCore.Mvc;
 using foxtrot_store_backend.Services.LocalStorage;
+using System.Globalization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -19,10 +20,18 @@ public class BrandsController(
     private readonly ILocalStorageService _localStorage = localStorage;
     private readonly ILogger<BrandsController> _logger = logger;
 
+    private string CurrentCultureCode =>
+    CultureInfo.CurrentUICulture.Name;
+
+    private bool IsAdmin =>
+        User.IsInRole("Admin");
+
     [HttpGet]
     public async Task<IActionResult> GetBrands()
     {
-        var brands = await _dataAccessor.GetBrandsAsync();
+        var brands = await _dataAccessor.GetBrandsAsync(
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         return Ok(new RestResponse
         {
@@ -42,7 +51,10 @@ public class BrandsController(
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetBrandById(Guid id)
     {
-        var brand = await _dataAccessor.GetBrandByIdAsync(id);
+        var brand = await _dataAccessor.GetBrandByIdAsync(
+            id,
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         if (brand is null)
         {
@@ -97,7 +109,10 @@ public class BrandsController(
             });
         }
 
-        var brand = await _dataAccessor.GetBrandBySlugAsync(slug);
+        var brand = await _dataAccessor.GetBrandBySlugAsync(
+            slug,
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         if (brand is null)
         {
@@ -134,8 +149,8 @@ public class BrandsController(
 
     [HttpGet("{id:guid}/products")]
     public async Task<IActionResult> GetBrandProducts(
-    Guid id,
-    [FromQuery] ProductCatalogQuery query)
+        Guid id,
+        [FromQuery] ProductCatalogQuery query)
     {
         if (query.Page < 1)
         {
@@ -271,7 +286,9 @@ public class BrandsController(
         // Always use the brand ID supplied in the route.
         query.BrandId = id;
 
-        var result = await _dataAccessor.GetProductsAsync(query);
+        var result = await _dataAccessor.GetProductsAsync(
+            query,
+            CurrentCultureCode);
 
         return Ok(new RestResponse
         {
@@ -508,7 +525,9 @@ public class BrandsController(
     {
         try
         {
-            var brand = await _dataAccessor.CreateBrandAsync(request);
+            var brand = await _dataAccessor.CreateBrandAsync(
+                request,
+                CurrentCultureCode);
 
             return StatusCode(StatusCodes.Status201Created,
                 new RestResponse
@@ -537,6 +556,15 @@ public class BrandsController(
                 Data = new { message = ex.Message }
             });
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
+                Meta = new RestMeta { ApiName = "Brand" },
+                Data = new { message = ex.Message }
+            });
+        }
     }
 
     [Authorize(Roles = "Admin")]
@@ -547,7 +575,10 @@ public class BrandsController(
     {
         try
         {
-            var brand = await _dataAccessor.UpdateBrandAsync(id, request);
+            var brand = await _dataAccessor.UpdateBrandAsync(
+                id,
+                request,
+                CurrentCultureCode);
 
             if (brand is null)
             {
@@ -571,6 +602,15 @@ public class BrandsController(
             return Conflict(new RestResponse
             {
                 Status = RestStatus.Conflict,
+                Meta = new RestMeta { ApiName = "Brand" },
+                Data = new { message = ex.Message }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new RestResponse
+            {
+                Status = RestStatus.BadRequest,
                 Meta = new RestMeta { ApiName = "Brand" },
                 Data = new { message = ex.Message }
             });

@@ -5,6 +5,7 @@ using foxtrot_store_backend.Models.Rest;
 using foxtrot_store_backend.Services.LocalStorage;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -18,13 +19,15 @@ public class PromotionsController(
     private readonly DataAccessor _dataAccessor = dataAccessor;
     private readonly ILocalStorageService _localStorage = localStorage;
     private readonly ILogger<PromotionsController> _logger = logger;
+    private string CurrentCultureCode =>
+        CultureInfo.CurrentUICulture.Name;
 
     // Public endpoints
 
     [HttpGet]
     public async Task<IActionResult> GetPromotions()
     {
-        var promotions = await _dataAccessor.GetPromotionsAsync();
+        var promotions = await _dataAccessor.GetPromotionsAsync(CurrentCultureCode);
 
         return Ok(CreateResponse(RestStatus.Ok, promotions));
     }
@@ -32,7 +35,7 @@ public class PromotionsController(
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetPromotionById(Guid id)
     {
-        var promotion = await _dataAccessor.GetPromotionByIdAsync(id);
+        var promotion = await _dataAccessor.GetPromotionByIdAsync(id, CurrentCultureCode);
 
         if (promotion is null)
         {
@@ -54,7 +57,7 @@ public class PromotionsController(
                 new { message = "Invalid promotion slug." }));
         }
 
-        var promotion = await _dataAccessor.GetPromotionBySlugAsync(slug);
+        var promotion = await _dataAccessor.GetPromotionBySlugAsync(slug, CurrentCultureCode);
 
         if (promotion is null)
         {
@@ -118,7 +121,7 @@ public class PromotionsController(
     [HttpGet("admin")]
     public async Task<IActionResult> GetPromotionsForAdmin()
     {
-        var promotions = await _dataAccessor.GetPromotionsForAdminAsync();
+        var promotions = await _dataAccessor.GetPromotionsForAdminAsync(CurrentCultureCode);
 
         return Ok(CreateResponse(RestStatus.Ok, promotions));
     }
@@ -128,7 +131,7 @@ public class PromotionsController(
     public async Task<IActionResult> GetPromotionForAdminById(Guid id)
     {
         var promotion =
-            await _dataAccessor.GetPromotionForAdminByIdAsync(id);
+            await _dataAccessor.GetPromotionForAdminByIdAsync(id, CurrentCultureCode);
 
         if (promotion is null)
         {
@@ -148,7 +151,7 @@ public class PromotionsController(
         try
         {
             var promotion =
-                await _dataAccessor.CreatePromotionAsync(request);
+                await _dataAccessor.CreatePromotionAsync(request, CurrentCultureCode);
 
             return CreatedAtAction(
                 nameof(GetPromotionForAdminById),
@@ -178,7 +181,7 @@ public class PromotionsController(
         try
         {
             var promotion =
-                await _dataAccessor.UpdatePromotionAsync(id, request);
+                await _dataAccessor.UpdatePromotionAsync(id, request, CurrentCultureCode);
 
             if (promotion is null)
             {

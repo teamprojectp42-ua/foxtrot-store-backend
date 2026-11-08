@@ -13,6 +13,8 @@ using MySql.Data.MySqlClient;
 using System.Globalization;
 using foxtrot_store_backend.Models.Products.Translations;
 using foxtrot_store_backend.Models.Categories.Translations;
+using foxtrot_store_backend.Models.Brands.Translations;
+using foxtrot_store_backend.Models.Promotions.Translations;
 
 namespace foxtrot_store_backend.Data;
 
@@ -451,7 +453,17 @@ public class DataAccessor(
 
                 BrandName = product.Brand != null &&
                             product.Brand.IsActive
-                    ? product.Brand.Name
+                    ? (
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                      )
                     : null,
 
                 PrimaryImageUrl = product.Images
@@ -484,7 +496,8 @@ public class DataAccessor(
             .ToListAsync();
 
         var promotionDiscounts = await GetActivePromotionDiscountsAsync(
-            items.Select(item => item.Id));
+            items.Select(item => item.Id),
+            cultureCode);
 
         foreach (var item in items)
         {
@@ -562,7 +575,17 @@ public class DataAccessor(
 
                 BrandName = product.Brand != null &&
                             product.Brand.IsActive
-                    ? product.Brand.Name
+                    ? (
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                      )
                     : null,
 
                 Categories = product.ProductCategories
@@ -642,7 +665,8 @@ public class DataAccessor(
         if (product is not null)
         {
             var promotionDiscounts = await GetActivePromotionDiscountsAsync(
-                new[] { product.Id });
+                new[] { product.Id },
+                cultureCode);
 
             product.ActivePromotion = CalculateBestPromotionPrice(
                 product.Price,
@@ -712,7 +736,17 @@ public class DataAccessor(
 
                 BrandName = product.Brand != null &&
                             product.Brand.IsActive
-                    ? product.Brand.Name
+                    ? (
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                      )
                     : null,
 
                 Categories = product.ProductCategories
@@ -792,7 +826,8 @@ public class DataAccessor(
         if (product is not null)
         {
             var promotionDiscounts = await GetActivePromotionDiscountsAsync(
-                new[] { product.Id });
+                new[] { product.Id },
+                cultureCode);
 
             product.ActivePromotion = CalculateBestPromotionPrice(
                 product.Price,
@@ -911,12 +946,6 @@ public class DataAccessor(
             })
             .ToList();
 
-        EnsureUniqueSpecificationNames(
-            specifications.SelectMany(
-                specification => specification.Translations));
-
-
-        // Names must be unique within each culture.
         EnsureUniqueSpecificationNames(
             specifications.SelectMany(
                 specification => specification.Translations));
@@ -1040,7 +1069,17 @@ public class DataAccessor(
 
                 BrandName = product.Brand != null &&
                             product.Brand.IsActive
-                    ? product.Brand.Name
+                    ? (
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == cultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                        ??
+                        product.Brand.Translations
+                            .Where(t => t.CultureCode == DefaultCultureCode)
+                            .Select(t => t.Name)
+                            .FirstOrDefault()
+                      )
                     : null,
 
                 Categories = product.ProductCategories
@@ -1131,7 +1170,8 @@ public class DataAccessor(
         if (product is not null)
         {
             var promotionDiscounts = await GetActivePromotionDiscountsAsync(
-                new[] { product.Id });
+                new[] { product.Id },
+                cultureCode);
 
             product.ActivePromotion = CalculateBestPromotionPrice(
                 product.Price,
@@ -1227,7 +1267,8 @@ public class DataAccessor(
         }
 
         var translations = NormalizeProductTranslations(
-            request.Translations);
+            request.Translations,
+            requireDefaultCulture: false);
 
         var specifications = request.Specifications
             .Select(specification =>
@@ -1240,7 +1281,8 @@ public class DataAccessor(
 
                 var specificationTranslations =
                     NormalizeSpecificationTranslations(
-                        specification.Translations);
+                        specification.Translations,
+                        requireDefaultCulture: !specification.Id.HasValue);
 
                 if (specification.SortOrder < 0)
                 {
@@ -1558,7 +1600,8 @@ public class DataAccessor(
         }
 
         var translations = NormalizeSpecificationTranslations(
-            request.Translations);
+            request.Translations,
+            requireDefaultCulture: false);
 
         if (request.SortOrder < 0)
         {
@@ -1721,7 +1764,8 @@ public class DataAccessor(
     }
 
     private static List<ProductTranslationRequest> NormalizeProductTranslations(
-        List<ProductTranslationRequest>? translations)
+        List<ProductTranslationRequest>? translations,
+        bool requireDefaultCulture = true)
     {
         if (translations is null || translations.Count == 0)
         {
@@ -1775,7 +1819,8 @@ public class DataAccessor(
             });
         }
 
-        if (!cultures.Contains(DefaultCultureCode))
+        if (requireDefaultCulture &&
+            !cultures.Contains(DefaultCultureCode))
         {
             throw new ArgumentException(
                 "The uk-UA product translation is required.");
@@ -1785,7 +1830,8 @@ public class DataAccessor(
     }
 
     private static List<ProductSpecificationTranslationRequest> NormalizeSpecificationTranslations(
-            List<ProductSpecificationTranslationRequest>? translations)
+        List<ProductSpecificationTranslationRequest>? translations,
+        bool requireDefaultCulture = true)
     {
         if (translations is null || translations.Count == 0)
         {
@@ -1840,7 +1886,8 @@ public class DataAccessor(
             });
         }
 
-        if (!cultures.Contains(DefaultCultureCode))
+        if (requireDefaultCulture &&
+            !cultures.Contains(DefaultCultureCode))
         {
             throw new ArgumentException(
                 "The uk-UA specification translation is required.");
@@ -1923,33 +1970,20 @@ public class DataAccessor(
         Product product,
         List<ProductTranslationRequest> translations)
     {
-        var incoming = translations.ToDictionary(
-            translation => translation.CultureCode,
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var existing in product.Translations.ToList())
-        {
-            if (!incoming.TryGetValue(
-                    existing.CultureCode,
-                    out var updated))
-            {
-                _dataContext.ProductTranslations.Remove(existing);
-                product.Translations.Remove(existing);
-                continue;
-            }
-
-            existing.Name = updated.Name;
-            existing.Description = updated.Description;
-        }
-
-        var existingCultures = product.Translations
-            .Select(translation => translation.CultureCode)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingTranslations = product.Translations
+            .ToDictionary(
+                translation => translation.CultureCode,
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var translation in translations)
         {
-            if (existingCultures.Contains(translation.CultureCode))
+            if (existingTranslations.TryGetValue(
+                    translation.CultureCode,
+                    out var existing))
             {
+                existing.Name = translation.Name;
+                existing.Description = translation.Description;
+
                 continue;
             }
 
@@ -1965,42 +1999,26 @@ public class DataAccessor(
             product.Translations.Add(entity);
             _dataContext.ProductTranslations.Add(entity);
         }
-
     }
     private async Task SyncSpecificationTranslationsAsync(
         ProductSpecification specification,
         Guid productId,
         List<ProductSpecificationTranslationRequest> translations)
     {
-        var incoming = translations.ToDictionary(
-            translation => translation.CultureCode,
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var existing in specification.Translations.ToList())
-        {
-            if (!incoming.TryGetValue(
-                    existing.CultureCode,
-                    out var updated))
-            {
-                _dataContext.ProductSpecificationTranslations
-                    .Remove(existing);
-
-                specification.Translations.Remove(existing);
-                continue;
-            }
-
-            existing.Name = updated.Name;
-            existing.Value = updated.Value;
-        }
-
-        var existingCultures = specification.Translations
-            .Select(translation => translation.CultureCode)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingTranslations = specification.Translations
+            .ToDictionary(
+                translation => translation.CultureCode,
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var translation in translations)
         {
-            if (existingCultures.Contains(translation.CultureCode))
+            if (existingTranslations.TryGetValue(
+                    translation.CultureCode,
+                    out var existing))
             {
+                existing.Name = translation.Name;
+                existing.Value = translation.Value;
+
                 continue;
             }
 
@@ -2172,7 +2190,8 @@ public class DataAccessor(
         }
 
         var translations = NormalizeCategoryTranslations(
-            request.Translations);
+            request.Translations,
+            requireDefaultCulture: false);
 
         var slug = request.Slug.Trim().ToLowerInvariant();
 
@@ -2348,10 +2367,12 @@ public class DataAccessor(
         }
     }
     public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync(
-        string cultureCode = DefaultCultureCode)
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
     {
         var categories = await GetCategoriesAsync(
-            cultureCode);
+            cultureCode,
+            includeTranslations);
 
         var nodes = categories.ToDictionary(
             category => category.Id,
@@ -2361,7 +2382,8 @@ public class DataAccessor(
                 Name = category.Name,
                 Slug = category.Slug,
                 SortOrder = category.SortOrder,
-                ImageUrl = category.ImageUrl
+                ImageUrl = category.ImageUrl,
+                Translations = category.Translations
             });
 
         var roots = new List<CategoryTreeDto>();
@@ -2455,7 +2477,8 @@ public class DataAccessor(
         };
     }
     private static List<CategoryTranslationRequest> NormalizeCategoryTranslations(
-            List<CategoryTranslationRequest>? translations)
+        List<CategoryTranslationRequest>? translations,
+        bool requireDefaultCulture = true)
     {
         if (translations is null || translations.Count == 0)
         {
@@ -2509,7 +2532,8 @@ public class DataAccessor(
             });
         }
 
-        if (!cultures.Contains(DefaultCultureCode))
+        if (requireDefaultCulture &&
+            !cultures.Contains(DefaultCultureCode))
         {
             throw new ArgumentException(
                 "The uk-UA category translation is required.");
@@ -2521,33 +2545,20 @@ public class DataAccessor(
         Category category,
         List<CategoryTranslationRequest> translations)
     {
-        var incoming = translations.ToDictionary(
-            translation => translation.CultureCode,
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var existing in category.Translations.ToList())
-        {
-            if (!incoming.TryGetValue(
-                    existing.CultureCode,
-                    out var updated))
-            {
-                _dataContext.CategoryTranslations.Remove(existing);
-                category.Translations.Remove(existing);
-                continue;
-            }
-
-            existing.Name = updated.Name;
-            existing.Description = updated.Description;
-        }
-
-        var existingCultures = category.Translations
-            .Select(translation => translation.CultureCode)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingTranslations = category.Translations
+            .ToDictionary(
+                translation => translation.CultureCode,
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var translation in translations)
         {
-            if (existingCultures.Contains(translation.CultureCode))
+            if (existingTranslations.TryGetValue(
+                    translation.CultureCode,
+                    out var existing))
             {
+                existing.Name = translation.Name;
+                existing.Description = translation.Description;
+
                 continue;
             }
 
@@ -2561,7 +2572,6 @@ public class DataAccessor(
             };
 
             category.Translations.Add(entity);
-
             _dataContext.CategoryTranslations.Add(entity);
         }
     }
@@ -2583,76 +2593,77 @@ public class DataAccessor(
     }
 
     // Brands
-    public async Task<List<BrandDto>> GetBrandsAsync()
+    public async Task<List<BrandDto>> GetBrandsAsync(
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var brands = await _dataContext.Brands
             .AsNoTracking()
+            .Include(brand => brand.Translations)
             .Where(brand => brand.IsActive)
-            .OrderBy(brand => brand.Name)
-            .Select(brand => new BrandDto
-            {
-                Id = brand.Id,
-                Name = brand.Name,
-                Slug = brand.Slug,
-                Description = brand.Description,
-                LogoUrl = brand.LogoUrl
-            })
             .ToListAsync();
 
-        foreach (var brand in brands)
-        {
-            brand.LogoUrl = BuildBrandLogoUrl(brand.LogoUrl);
-        }
-
-        return brands;
+        return brands
+            .Select(brand =>
+                MapBrandDto(
+                    brand,
+                    cultureCode,
+                    includeTranslations))
+            .OrderBy(
+                brand => brand.Name,
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
-    public async Task<BrandDto?> GetBrandByIdAsync(Guid id)
+    public async Task<BrandDto?> GetBrandByIdAsync(
+        Guid id,
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var brand = await _dataContext.Brands
             .AsNoTracking()
-            .Where(brand =>
+            .Include(brand => brand.Translations)
+            .FirstOrDefaultAsync(brand =>
                 brand.Id == id &&
-                brand.IsActive)
-            .Select(brand => new BrandDto
-            {
-                Id = brand.Id,
-                Name = brand.Name,
-                Slug = brand.Slug,
-                Description = brand.Description,
-                LogoUrl = brand.LogoUrl
-            })
-            .FirstOrDefaultAsync();
+                brand.IsActive);
 
-        if (brand is not null)
+        return brand is null
+            ? null
+            : MapBrandDto(
+                brand,
+                cultureCode,
+                includeTranslations);
+    }
+    public async Task<BrandDto?> GetBrandBySlugAsync(
+        string slug,
+        string cultureCode = DefaultCultureCode,
+        bool includeTranslations = false)
+    {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        if (string.IsNullOrWhiteSpace(slug))
         {
-            brand.LogoUrl = BuildBrandLogoUrl(brand.LogoUrl);
+            return null;
         }
 
-        return brand;
-    }
-    public async Task<BrandDto?> GetBrandBySlugAsync(string slug)
-    {
+        slug = slug.Trim().ToLowerInvariant();
+
         var brand = await _dataContext.Brands
             .AsNoTracking()
-            .Where(brand =>
+            .Include(brand => brand.Translations)
+            .FirstOrDefaultAsync(brand =>
                 brand.Slug == slug &&
-                brand.IsActive)
-            .Select(brand => new BrandDto
-            {
-                Id = brand.Id,
-                Name = brand.Name,
-                Slug = brand.Slug,
-                Description = brand.Description,
-                LogoUrl = brand.LogoUrl
-            })
-            .FirstOrDefaultAsync();
+                brand.IsActive);
 
-        if (brand is not null)
-        {
-            brand.LogoUrl = BuildBrandLogoUrl(brand.LogoUrl);
-        }
-
-        return brand;
+        return brand is null
+            ? null
+            : MapBrandDto(
+                brand,
+                cultureCode,
+                includeTranslations);
     }
     public async Task<bool> BrandExistsAsync(Guid id)
     {
@@ -2661,12 +2672,18 @@ public class DataAccessor(
             .AnyAsync(brand => brand.Id == id && brand.IsActive);
     }
     public async Task<BrandDto> CreateBrandAsync(
-        BrandCreateRequest request)
+        BrandCreateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
-        var name = request.Name.Trim();
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        var translations = NormalizeBrandTranslations(
+            request.Translations);
+
         var slug = request.Slug.Trim().ToLowerInvariant();
 
-        if (await _dataContext.Brands.AnyAsync(b => b.Slug == slug))
+        if (await _dataContext.Brands.AnyAsync(
+            brand => brand.Slug == slug))
         {
             throw new InvalidOperationException(
                 "A brand with this slug already exists.");
@@ -2674,60 +2691,67 @@ public class DataAccessor(
 
         var brand = new Brand
         {
-            Id = Guid.NewGuid(),
-            Name = name,
+            Id = await GetDbIdentityAsync(),
             Slug = slug,
-            Description = request.Description?.Trim(),
             IsActive = true
         };
 
         _dataContext.Brands.Add(brand);
-        await _dataContext.SaveChangesAsync();
 
-        return new BrandDto
-        {
-            Id = brand.Id,
-            Name = brand.Name,
-            Slug = brand.Slug,
-            Description = brand.Description,
-            LogoUrl = BuildBrandLogoUrl(brand.LogoUrl)
-        };
+        await SyncBrandTranslationsAsync(
+            brand,
+            translations);
+
+        await SaveChangesOrThrowConflictAsync();
+
+        return MapBrandDto(
+            brand,
+            cultureCode,
+            includeTranslations: true);
     }
     public async Task<BrandDto?> UpdateBrandAsync(
         Guid id,
-        BrandUpdateRequest request)
+        BrandUpdateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var brand = await _dataContext.Brands
-            .FirstOrDefaultAsync(b => b.Id == id);
+            .Include(brand => brand.Translations)
+            .FirstOrDefaultAsync(brand => brand.Id == id);
 
         if (brand is null)
         {
             return null;
         }
 
+        var translations = NormalizeBrandTranslations(
+            request.Translations,
+            requireDefaultCulture: false);
+
         var slug = request.Slug.Trim().ToLowerInvariant();
 
         if (await _dataContext.Brands.AnyAsync(
-            b => b.Slug == slug && b.Id != id))
+            existing =>
+                existing.Slug == slug &&
+                existing.Id != id))
         {
             throw new InvalidOperationException(
                 "A brand with this slug already exists.");
         }
 
-        brand.Name = request.Name.Trim();
         brand.Slug = slug;
-        brand.Description = request.Description?.Trim();
 
-        await _dataContext.SaveChangesAsync();
+        await SyncBrandTranslationsAsync(
+            brand,
+            translations);
 
-        return new BrandDto
-        {
-            Id = brand.Id,
-            Name = brand.Name,
-            Slug = brand.Slug,
-            Description = brand.Description,
-            LogoUrl = BuildBrandLogoUrl(brand.LogoUrl)
-        };
+        await SaveChangesOrThrowConflictAsync();
+
+        return MapBrandDto(
+            brand,
+            cultureCode,
+            includeTranslations: true);
     }
     public async Task<(bool Updated, string? PreviousLogoKey)> SetBrandLogoAsync(
         Guid brandId,
@@ -2797,6 +2821,145 @@ public class DataAccessor(
     }
 
 
+
+    private async Task SyncBrandTranslationsAsync(
+        Brand brand,
+        List<BrandTranslationRequest> translations)
+    {
+        var existingTranslations = brand.Translations
+            .ToDictionary(
+                translation => translation.CultureCode,
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (existingTranslations.TryGetValue(
+                    translation.CultureCode,
+                    out var existing))
+            {
+                existing.Name = translation.Name;
+                existing.Description = translation.Description;
+
+                continue;
+            }
+
+            var entity = new BrandTranslation
+            {
+                Id = await GetDbIdentityAsync(),
+                BrandId = brand.Id,
+                CultureCode = translation.CultureCode,
+                Name = translation.Name,
+                Description = translation.Description
+            };
+
+            brand.Translations.Add(entity);
+            _dataContext.BrandTranslations.Add(entity);
+        }
+    }
+    private static BrandDto MapBrandDto(
+        Brand brand,
+        string cultureCode,
+        bool includeTranslations = false)
+    {
+        var localizedTranslation =
+            brand.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == cultureCode)
+            ??
+            brand.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == DefaultCultureCode);
+
+        return new BrandDto
+        {
+            Id = brand.Id,
+
+            Name = localizedTranslation?.Name ?? string.Empty,
+
+            Slug = brand.Slug,
+
+            Description = localizedTranslation?.Description,
+
+            LogoUrl = BuildBrandLogoUrl(brand.LogoUrl),
+
+            Translations = includeTranslations
+                ? brand.Translations
+                    .OrderBy(translation => translation.CultureCode)
+                    .Select(translation => new BrandTranslationDto
+                    {
+                        CultureCode = translation.CultureCode,
+                        Name = translation.Name,
+                        Description = translation.Description
+                    })
+                    .ToList()
+                : []
+        };
+    }
+    private static List<BrandTranslationRequest> NormalizeBrandTranslations(
+        List<BrandTranslationRequest>? translations,
+        bool requireDefaultCulture = true)
+    {
+        if (translations is null || translations.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one brand translation is required.");
+        }
+
+        var result = new List<BrandTranslationRequest>();
+
+        var cultures = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (translation is null)
+            {
+                throw new ArgumentException(
+                    "Brand translation cannot be null.");
+            }
+
+            var culture = ValidateTranslationCultureCode(
+                translation.CultureCode);
+
+            if (!cultures.Add(culture))
+            {
+                throw new ArgumentException(
+                    $"Duplicate brand translation culture: {culture}.");
+            }
+
+            var name = translation.Name?.Trim();
+            var description = translation.Description?.Trim();
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new ArgumentException(
+                    $"Brand name is required for {culture}.");
+            }
+
+            if (name.Length > 150 ||
+                description?.Length > 1000)
+            {
+                throw new ArgumentException(
+                    $"Brand translation exceeds allowed length for {culture}.");
+            }
+
+            result.Add(new BrandTranslationRequest
+            {
+                CultureCode = culture,
+                Name = name,
+                Description = description
+            });
+        }
+
+        if (requireDefaultCulture &&
+            !cultures.Contains(DefaultCultureCode))
+        {
+            throw new ArgumentException(
+                "The uk-UA brand translation is required.");
+        }
+
+        return result;
+    }
     private static string? BuildBrandLogoUrl(string? logoUrl)
     {
         if (string.IsNullOrWhiteSpace(logoUrl))
@@ -2836,8 +2999,11 @@ public class DataAccessor(
     }
 
     // Promotions
-    public async Task<List<PromotionDto>> GetPromotionsAsync()
+    public async Task<List<PromotionDto>> GetPromotionsAsync(
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var now = DateTime.UtcNow;
 
         var promotions = await _dataContext.Promotions
@@ -2849,20 +3015,36 @@ public class DataAccessor(
                 (!promotion.EndDate.HasValue ||
                  promotion.EndDate.Value >= now))
             .OrderBy(promotion => promotion.SortOrder)
-            .ThenBy(promotion => promotion.Title)
             .Select(promotion => new PromotionDto
             {
                 Id = promotion.Id,
-                Title = promotion.Title,
+
+                Title =
+                    promotion.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    promotion.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = promotion.Slug,
+
                 BannerImageUrl = promotion.BannerImageUrl,
                 CardImageUrl = promotion.CardImageUrl,
+
                 SortOrder = promotion.SortOrder,
+
                 DiscountType = promotion.DiscountType,
                 DiscountValue = promotion.DiscountValue,
+
                 ProductIds = promotion.PromotionProducts
                     .Select(link => link.ProductId)
-                    .ToList(),
+                    .ToList()
             })
             .ToListAsync();
 
@@ -2875,10 +3057,19 @@ public class DataAccessor(
                 BuildPromotionImageUrl(promotion.CardImageUrl);
         }
 
-        return promotions;
+        return promotions
+            .OrderBy(promotion => promotion.SortOrder)
+            .ThenBy(
+                promotion => promotion.Title,
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
-    public async Task<PromotionDetailsDto?> GetPromotionByIdAsync(Guid id)
+    public async Task<PromotionDetailsDto?> GetPromotionByIdAsync(
+        Guid id,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var now = DateTime.UtcNow;
 
         var promotion = await _dataContext.Promotions
@@ -2893,19 +3084,46 @@ public class DataAccessor(
             .Select(promotion => new PromotionDetailsDto
             {
                 Id = promotion.Id,
-                Title = promotion.Title,
+
+                Title =
+                    promotion.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    promotion.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = promotion.Slug,
-                Description = promotion.Description,
+
+                Description =
+                    promotion.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    promotion.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault(),
+
                 BannerImageUrl = promotion.BannerImageUrl,
                 CardImageUrl = promotion.CardImageUrl,
                 ImageUrl = promotion.ImageUrl,
+
                 StartDate = promotion.StartDate,
                 EndDate = promotion.EndDate,
+
                 DiscountType = promotion.DiscountType,
                 DiscountValue = promotion.DiscountValue,
+
                 ProductIds = promotion.PromotionProducts
                     .Select(link => link.ProductId)
-                    .ToList(),
+                    .ToList()
             })
             .FirstOrDefaultAsync();
 
@@ -2924,15 +3142,24 @@ public class DataAccessor(
         return promotion;
     }
     public async Task<PromotionDetailsDto?> GetPromotionBySlugAsync(
-        string slug)
+        string slug,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            return null;
+        }
+
+        slug = slug.Trim().ToLowerInvariant();
+
         var now = DateTime.UtcNow;
-        var normalizedSlug = slug.Trim().ToLowerInvariant();
 
         var promotion = await _dataContext.Promotions
             .AsNoTracking()
             .Where(promotion =>
-                promotion.Slug == normalizedSlug &&
+                promotion.Slug == slug &&
                 promotion.IsActive &&
                 (!promotion.StartDate.HasValue ||
                  promotion.StartDate.Value <= now) &&
@@ -2941,19 +3168,46 @@ public class DataAccessor(
             .Select(promotion => new PromotionDetailsDto
             {
                 Id = promotion.Id,
-                Title = promotion.Title,
+
+                Title =
+                    promotion.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    promotion.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
+
                 Slug = promotion.Slug,
-                Description = promotion.Description,
+
+                Description =
+                    promotion.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault()
+                    ??
+                    promotion.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Description)
+                        .FirstOrDefault(),
+
                 BannerImageUrl = promotion.BannerImageUrl,
                 CardImageUrl = promotion.CardImageUrl,
                 ImageUrl = promotion.ImageUrl,
+
                 StartDate = promotion.StartDate,
                 EndDate = promotion.EndDate,
+
                 DiscountType = promotion.DiscountType,
                 DiscountValue = promotion.DiscountValue,
+
                 ProductIds = promotion.PromotionProducts
                     .Select(link => link.ProductId)
-                    .ToList(),
+                    .ToList()
             })
             .FirstOrDefaultAsync();
 
@@ -2971,90 +3225,41 @@ public class DataAccessor(
 
         return promotion;
     }
-    public async Task<List<PromotionAdminDto>> GetPromotionsForAdminAsync()
+    public async Task<List<PromotionAdminDto>> GetPromotionsForAdminAsync(
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var promotions = await _dataContext.Promotions
             .AsNoTracking()
-            .OrderBy(promotion => promotion.SortOrder)
-            .ThenBy(promotion => promotion.Title)
-            .Select(promotion => new PromotionAdminDto
-            {
-                Id = promotion.Id,
-                Title = promotion.Title,
-                Slug = promotion.Slug,
-                Description = promotion.Description,
-                BannerImageUrl = promotion.BannerImageUrl,
-                CardImageUrl = promotion.CardImageUrl,
-                ImageUrl = promotion.ImageUrl,
-                StartDate = promotion.StartDate,
-                EndDate = promotion.EndDate,
-                IsActive = promotion.IsActive,
-                SortOrder = promotion.SortOrder,
-                DiscountType = promotion.DiscountType,
-                DiscountValue = promotion.DiscountValue,
-                ProductIds = promotion.PromotionProducts
-                    .Select(link => link.ProductId)
-                    .ToList(),
-                CreatedAt = promotion.CreatedAt,
-                UpdatedAt = promotion.UpdatedAt
-            })
+            .Include(promotion => promotion.Translations)
+            .Include(promotion => promotion.PromotionProducts)
             .ToListAsync();
 
-        foreach (var promotion in promotions)
-        {
-            promotion.BannerImageUrl =
-                BuildPromotionImageUrl(promotion.BannerImageUrl);
-
-            promotion.CardImageUrl =
-                BuildPromotionImageUrl(promotion.CardImageUrl);
-
-            promotion.ImageUrl =
-                BuildPromotionImageUrl(promotion.ImageUrl);
-        }
-
-        return promotions;
+        return promotions
+            .Select(promotion =>
+                MapPromotionAdminDto(promotion, cultureCode))
+            .OrderBy(promotion => promotion.SortOrder)
+            .ThenBy(
+                promotion => promotion.Title,
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
-    public async Task<PromotionAdminDto?> GetPromotionForAdminByIdAsync(Guid id)
+    public async Task<PromotionAdminDto?> GetPromotionForAdminByIdAsync(
+        Guid id,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var promotion = await _dataContext.Promotions
             .AsNoTracking()
-            .Where(promotion => promotion.Id == id)
-            .Select(promotion => new PromotionAdminDto
-            {
-                Id = promotion.Id,
-                Title = promotion.Title,
-                Slug = promotion.Slug,
-                Description = promotion.Description,
-                BannerImageUrl = promotion.BannerImageUrl,
-                CardImageUrl = promotion.CardImageUrl,
-                ImageUrl = promotion.ImageUrl,
-                StartDate = promotion.StartDate,
-                EndDate = promotion.EndDate,
-                IsActive = promotion.IsActive,
-                SortOrder = promotion.SortOrder,
-                DiscountType = promotion.DiscountType,
-                DiscountValue = promotion.DiscountValue,
-                ProductIds = promotion.PromotionProducts
-                    .Select(link => link.ProductId)
-                    .ToList(),
-                CreatedAt = promotion.CreatedAt,
-                UpdatedAt = promotion.UpdatedAt
-            })
-            .FirstOrDefaultAsync();
+            .Include(promotion => promotion.Translations)
+            .Include(promotion => promotion.PromotionProducts)
+            .FirstOrDefaultAsync(promotion => promotion.Id == id);
 
-        if (promotion is not null)
-        {
-            promotion.BannerImageUrl =
-                BuildPromotionImageUrl(promotion.BannerImageUrl);
-
-            promotion.CardImageUrl =
-                BuildPromotionImageUrl(promotion.CardImageUrl);
-
-            promotion.ImageUrl =
-                BuildPromotionImageUrl(promotion.ImageUrl);
-        }
-
-        return promotion;
+        return promotion is null
+            ? null
+            : MapPromotionAdminDto(promotion, cultureCode);
     }
     public async Task<bool> PromotionSlugExistsAsync(
         string slug,
@@ -3074,8 +3279,11 @@ public class DataAccessor(
         return await query.AnyAsync();
     }
     public async Task<PromotionAdminDto> CreatePromotionAsync(
-        PromotionCreateRequest request)
+        PromotionCreateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         ValidatePromotionDates(
             request.StartDate,
             request.EndDate);
@@ -3083,6 +3291,9 @@ public class DataAccessor(
         ValidatePromotionDiscount(
             request.DiscountType,
             request.DiscountValue);
+
+        var translations = NormalizePromotionTranslations(
+            request.Translations);
 
         var productIds = await ValidatePromotionProductIdsAsync(
             request.ProductIds);
@@ -3097,19 +3308,25 @@ public class DataAccessor(
 
         var promotion = new Promotion
         {
-            Title = request.Title.Trim(),
             Slug = slug,
-            Description = request.Description?.Trim(),
+
             StartDate = request.StartDate,
             EndDate = request.EndDate,
+
             IsActive = request.IsActive,
             SortOrder = request.SortOrder,
+
             DiscountType = request.DiscountType,
             DiscountValue = request.DiscountValue,
+
             CreatedAt = DateTime.UtcNow
         };
 
         _dataContext.Promotions.Add(promotion);
+
+        await SyncPromotionTranslationsAsync(
+            promotion,
+            translations);
 
         foreach (var productId in productIds)
         {
@@ -3123,14 +3340,19 @@ public class DataAccessor(
 
         await _dataContext.SaveChangesAsync();
 
-        return await GetPromotionForAdminByIdAsync(promotion.Id)
+        return await GetPromotionForAdminByIdAsync(
+            promotion.Id,
+            cultureCode)
             ?? throw new InvalidOperationException(
                 "The promotion was created but could not be retrieved.");
     }
     public async Task<PromotionAdminDto?> UpdatePromotionAsync(
         Guid id,
-        PromotionUpdateRequest request)
+        PromotionUpdateRequest request,
+        string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         ValidatePromotionDates(
             request.StartDate,
             request.EndDate);
@@ -3143,7 +3365,12 @@ public class DataAccessor(
             ?? throw new ArgumentException(
                 "IsActive is required.");
 
+        var translations = NormalizePromotionTranslations(
+            request.Translations,
+            requireDefaultCulture: false);
+
         var promotion = await _dataContext.Promotions
+            .Include(promotion => promotion.Translations)
             .FirstOrDefaultAsync(promotion => promotion.Id == id);
 
         if (promotion is null)
@@ -3162,9 +3389,7 @@ public class DataAccessor(
         var productIds = await ValidatePromotionProductIdsAsync(
             request.ProductIds);
 
-        promotion.Title = request.Title.Trim();
         promotion.Slug = slug;
-        promotion.Description = request.Description?.Trim();
         promotion.StartDate = request.StartDate;
         promotion.EndDate = request.EndDate;
         promotion.IsActive = isActive;
@@ -3172,6 +3397,10 @@ public class DataAccessor(
         promotion.DiscountType = request.DiscountType;
         promotion.DiscountValue = request.DiscountValue;
         promotion.UpdatedAt = DateTime.UtcNow;
+
+        await SyncPromotionTranslationsAsync(
+            promotion,
+            translations);
 
         var existingLinks = await _dataContext.PromotionProducts
             .Where(link => link.PromotionId == id)
@@ -3202,7 +3431,9 @@ public class DataAccessor(
 
         await _dataContext.SaveChangesAsync();
 
-        return await GetPromotionForAdminByIdAsync(id);
+        return await GetPromotionForAdminByIdAsync(
+            promotion.Id,
+            cultureCode);
     }
     public async Task<(bool Updated, string? PreviousImageKey)> SetPromotionImageAsync(
         Guid promotionId,
@@ -3297,6 +3528,162 @@ public class DataAccessor(
     }
 
 
+    private static PromotionAdminDto MapPromotionAdminDto(
+        Promotion promotion,
+        string cultureCode)
+    {
+        var localizedTranslation =
+            promotion.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == cultureCode)
+            ??
+            promotion.Translations.FirstOrDefault(
+                translation =>
+                    translation.CultureCode == DefaultCultureCode);
+
+        return new PromotionAdminDto
+        {
+            Id = promotion.Id,
+
+            Title = localizedTranslation?.Title ?? string.Empty,
+
+            Slug = promotion.Slug,
+
+            Description = localizedTranslation?.Description,
+
+            Translations = promotion.Translations
+                .OrderBy(translation => translation.CultureCode)
+                .Select(translation => new PromotionTranslationDto
+                {
+                    CultureCode = translation.CultureCode,
+                    Title = translation.Title,
+                    Description = translation.Description
+                })
+                .ToList(),
+
+            BannerImageUrl = BuildPromotionImageUrl(
+                promotion.BannerImageUrl),
+
+            CardImageUrl = BuildPromotionImageUrl(
+                promotion.CardImageUrl),
+
+            ImageUrl = BuildPromotionImageUrl(
+                promotion.ImageUrl),
+
+            StartDate = promotion.StartDate,
+            EndDate = promotion.EndDate,
+            IsActive = promotion.IsActive,
+            SortOrder = promotion.SortOrder,
+            DiscountType = promotion.DiscountType,
+            DiscountValue = promotion.DiscountValue,
+
+            ProductIds = promotion.PromotionProducts
+                .Select(link => link.ProductId)
+                .ToList(),
+
+            CreatedAt = promotion.CreatedAt,
+            UpdatedAt = promotion.UpdatedAt
+        };
+    }
+    private async Task SyncPromotionTranslationsAsync(
+        Promotion promotion,
+        List<PromotionTranslationRequest> translations)
+    {
+        var existingTranslations = promotion.Translations
+            .ToDictionary(
+                translation => translation.CultureCode,
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (existingTranslations.TryGetValue(
+                    translation.CultureCode,
+                    out var existing))
+            {
+                existing.Title = translation.Title;
+                existing.Description = translation.Description;
+
+                continue;
+            }
+
+            var entity = new PromotionTranslation
+            {
+                Id = await GetDbIdentityAsync(),
+                PromotionId = promotion.Id,
+                CultureCode = translation.CultureCode,
+                Title = translation.Title,
+                Description = translation.Description
+            };
+
+            promotion.Translations.Add(entity);
+            _dataContext.PromotionTranslations.Add(entity);
+        }
+    }
+    private static List<PromotionTranslationRequest> NormalizePromotionTranslations(
+        List<PromotionTranslationRequest>? translations,
+        bool requireDefaultCulture = true)
+    {
+        if (translations is null || translations.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one promotion translation is required.");
+        }
+
+        var result = new List<PromotionTranslationRequest>();
+
+        var cultures = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var translation in translations)
+        {
+            if (translation is null)
+            {
+                throw new ArgumentException(
+                    "Promotion translation cannot be null.");
+            }
+
+            var culture = ValidateTranslationCultureCode(
+                translation.CultureCode);
+
+            if (!cultures.Add(culture))
+            {
+                throw new ArgumentException(
+                    $"Duplicate promotion translation culture: {culture}.");
+            }
+
+            var title = translation.Title?.Trim();
+            var description = translation.Description?.Trim();
+
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                throw new ArgumentException(
+                    $"Promotion title is required for {culture}.");
+            }
+
+            if (title.Length > 200 ||
+                description?.Length > 2000)
+            {
+                throw new ArgumentException(
+                    $"Promotion translation exceeds allowed length for {culture}.");
+            }
+
+            result.Add(new PromotionTranslationRequest
+            {
+                CultureCode = culture,
+                Title = title,
+                Description = description
+            });
+        }
+
+        if (requireDefaultCulture &&
+            !cultures.Contains(DefaultCultureCode))
+        {
+            throw new ArgumentException(
+                "The uk-UA promotion translation is required.");
+        }
+
+        return result;
+    }
     private static void ValidatePromotionDates(
         DateTime? startDate,
         DateTime? endDate)
@@ -3402,8 +3789,11 @@ public class DataAccessor(
         decimal DiscountValue,
         int SortOrder);
     private async Task<Dictionary<Guid, List<PromotionDiscountCandidate>>> GetActivePromotionDiscountsAsync(
-            IEnumerable<Guid> productIds)
+            IEnumerable<Guid> productIds,
+            string cultureCode = DefaultCultureCode)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         var ids = productIds.Distinct().ToList();
 
         if (ids.Count == 0)
@@ -3428,7 +3818,18 @@ public class DataAccessor(
             {
                 link.ProductId,
                 PromotionId = link.Promotion.Id,
-                Title = link.Promotion.Title,
+                Title =
+                    link.Promotion.Translations
+                        .Where(t => t.CultureCode == cultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    link.Promotion.Translations
+                        .Where(t => t.CultureCode == DefaultCultureCode)
+                        .Select(t => t.Title)
+                        .FirstOrDefault()
+                    ??
+                    string.Empty,
                 Slug = link.Promotion.Slug,
                 DiscountType = link.Promotion.DiscountType,
                 DiscountValue = link.Promotion.DiscountValue,
@@ -3831,6 +4232,12 @@ public class DataAccessor(
     {
         var roles = await _userManager.GetRolesAsync(user);
 
+        var claims = await _userManager.GetClaimsAsync(user);
+
+        var savedCultureCode = claims
+            .FirstOrDefault(claim => claim.Type == "locale")
+            ?.Value;
+
         return new UserDto
         {
             Id = user.Id,
@@ -3838,6 +4245,11 @@ public class DataAccessor(
             Email = user.Email ?? string.Empty,
             EmailConfirmed = user.EmailConfirmed,
             IsLockedOut = await _userManager.IsLockedOutAsync(user),
+
+            CultureCode = string.IsNullOrWhiteSpace(savedCultureCode)
+                ? null
+                : NormalizeCultureCode(savedCultureCode),
+
             Roles = roles.ToList()
         };
     }

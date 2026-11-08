@@ -4,11 +4,7 @@ public class Promotion
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    public string Title { get; set; } = string.Empty;
-
     public string Slug { get; set; } = string.Empty;
-
-    public string? Description { get; set; }
 
     public string? BannerImageUrl { get; set; }
 
@@ -34,4 +30,7 @@ public class Promotion
 
     public ICollection<PromotionProduct> PromotionProducts { get; set; }
         = new List<PromotionProduct>();
+
+    public ICollection<PromotionTranslation> Translations { get; set; }
+        = new List<PromotionTranslation>();
 }

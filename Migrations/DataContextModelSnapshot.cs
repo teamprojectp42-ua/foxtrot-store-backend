@@ -217,21 +217,12 @@ namespace foxtrot_store_backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
                     b.Property<string>("LogoUrl")
                         .HasMaxLength(2048)
                         .HasColumnType("varchar(2048)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -244,6 +235,37 @@ namespace foxtrot_store_backend.Migrations
                         .IsUnique();
 
                     b.ToTable("Brands");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.BrandTranslation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("BrandId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CultureCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BrandId", "CultureCode")
+                        .IsUnique();
+
+                    b.ToTable("BrandTranslations");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Cart", b =>
@@ -305,21 +327,12 @@ namespace foxtrot_store_backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("char(36)");
 
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)");
-
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(2048)
                         .HasColumnType("varchar(2048)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)");
 
                     b.Property<Guid?>("ParentCategoryId")
                         .HasColumnType("char(36)");
@@ -340,6 +353,37 @@ namespace foxtrot_store_backend.Migrations
                         .IsUnique();
 
                     b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.CategoryTranslation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CultureCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId", "CultureCode")
+                        .IsUnique();
+
+                    b.ToTable("CategoryTranslations");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Order", b =>
@@ -650,10 +694,6 @@ namespace foxtrot_store_backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("Description")
-                        .HasMaxLength(2000)
-                        .HasColumnType("varchar(2000)");
-
                     b.Property<string>("DiscountType")
                         .HasMaxLength(20)
                         .HasColumnType("varchar(20)");
@@ -683,11 +723,6 @@ namespace foxtrot_store_backend.Migrations
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("varchar(200)");
-
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime(6)");
 
@@ -712,6 +747,37 @@ namespace foxtrot_store_backend.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("PromotionProducts");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.PromotionTranslation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("CultureCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<Guid>("PromotionId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PromotionId", "CultureCode")
+                        .IsUnique();
+
+                    b.ToTable("PromotionTranslations");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -765,6 +831,17 @@ namespace foxtrot_store_backend.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.BrandTranslation", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Brand", "Brand")
+                        .WithMany("Translations")
+                        .HasForeignKey("BrandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Brand");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Cart", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", "User")
@@ -803,6 +880,17 @@ namespace foxtrot_store_backend.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("ParentCategory");
+                });
+
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.CategoryTranslation", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Category", "Category")
+                        .WithMany("Translations")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Order", b =>
@@ -928,9 +1016,22 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("Promotion");
                 });
 
+            modelBuilder.Entity("foxtrot_store_backend.Data.Entities.PromotionTranslation", b =>
+                {
+                    b.HasOne("foxtrot_store_backend.Data.Entities.Promotion", "Promotion")
+                        .WithMany("Translations")
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Promotion");
+                });
+
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Brand", b =>
                 {
                     b.Navigation("Products");
+
+                    b.Navigation("Translations");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Cart", b =>
@@ -943,6 +1044,8 @@ namespace foxtrot_store_backend.Migrations
                     b.Navigation("ChildCategories");
 
                     b.Navigation("ProductCategories");
+
+                    b.Navigation("Translations");
                 });
 
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Order", b =>
@@ -971,6 +1074,8 @@ namespace foxtrot_store_backend.Migrations
             modelBuilder.Entity("foxtrot_store_backend.Data.Entities.Promotion", b =>
                 {
                     b.Navigation("PromotionProducts");
+
+                    b.Navigation("Translations");
                 });
 #pragma warning restore 612, 618
         }

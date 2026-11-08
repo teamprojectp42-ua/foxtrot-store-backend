@@ -56,7 +56,8 @@ public class CategoriesController(
     public async Task<IActionResult> GetCategoryTree()
     {
         var categories = await _dataAccessor.GetCategoryTreeAsync(
-            CurrentCultureCode);
+            CurrentCultureCode,
+            includeTranslations: IsAdmin);
 
         return Ok(new RestResponse
         {

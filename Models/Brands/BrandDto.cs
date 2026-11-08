@@ -1,4 +1,6 @@
-﻿namespace foxtrot_store_backend.Models.Brands;
+﻿using foxtrot_store_backend.Models.Brands.Translations;
+
+namespace foxtrot_store_backend.Models.Brands;
 
 public class BrandDto
 {
@@ -11,4 +13,6 @@ public class BrandDto
     public string? Description { get; set; }
 
     public string? LogoUrl { get; set; }
+
+    public List<BrandTranslationDto> Translations { get; set; } = [];
 }

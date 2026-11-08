@@ -13,6 +13,22 @@
 		<value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
 	</resheader>
 
+
+	<data name="The {0} field is required." xml:space="preserve">
+    <value>The {0} field is required.</value>
+</data>
+
+	<data name="The {0} field is not a valid e-mail address." xml:space="preserve">
+    <value>The {0} field is not a valid e-mail address.</value>
+</data>
+
+	<data name="The field {0} must be a string with a maximum length of {1}." xml:space="preserve">
+    <value>The field {0} must be a string with a maximum length of {1}.</value>
+</data>
+
+	<data name="The field {0} must be a string with a minimum length of {1}." xml:space="preserve">
+    <value>The field {0} must be a string with a minimum length of {1}.</value>
+</data>
 	<data name="ProductNotFound" xml:space="preserve">
     <value>Product not found.</value>
   </data>
@@ -83,4 +99,31 @@
 	<data name="Identity_LoginAlreadyAssociated" xml:space="preserve">
     <value>This login is already associated with another user.</value>
   </data>
+	<data name="Auth_InvalidCredentials" xml:space="preserve">
+    <value>Invalid email or password.</value>
+  </data>
+    <data name="Auth_UserNotFound" xml:space="preserve">
+		<value>User not found.</value>
+	</data>
+		<data name="Auth_PasswordChanged" xml:space="preserve">
+		<value>Password changed successfully.</value>
+	</data>
+		<data name="Auth_CannotDeleteOwnAccount" xml:space="preserve">
+		<value>You cannot delete your own account through this endpoint.</value>
+	</data>
+		<data name="Auth_UserDeleted" xml:space="preserve">
+		<value>User deleted successfully.</value>
+	</data>
+		<data name="Auth_InvalidRole" xml:space="preserve">
+		<value>Invalid role. Allowed roles: User, Manager or Admin.</value>
+	</data>
+		<data name="Auth_RoleNotFound" xml:space="preserve">
+		<value>The specified role does not exist.</value>
+	</data>
+		<data name="Auth_LastAdmin" xml:space="preserve">
+		<value>The last administrator cannot be removed or deleted.</value>
+	</data>
+		<data name="Auth_UserHasOrders" xml:space="preserve">
+		<value>Cannot delete a user who has existing orders.</value>
+	</data>
 </root>

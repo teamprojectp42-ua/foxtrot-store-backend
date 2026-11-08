@@ -19,10 +19,14 @@ public class DataContext(DbContextOptions<DataContext> options)
         => Set<CategoryTranslation>();
 
     public DbSet<Promotion> Promotions => Set<Promotion>();
+    public DbSet<PromotionTranslation> PromotionTranslations
+        => Set<PromotionTranslation>();
     public DbSet<PromotionProduct> PromotionProducts
         => Set<PromotionProduct>();
 
     public DbSet<Brand> Brands => Set<Brand>();
+    public DbSet<BrandTranslation> BrandTranslations
+        => Set<BrandTranslation>();
 
     public DbSet<Cart> Carts => Set<Cart>();
     public DbSet<CartItem> CartItems => Set<CartItem>();
@@ -186,25 +190,44 @@ public class DataContext(DbContextOptions<DataContext> options)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-
         modelBuilder.Entity<Brand>(entity =>
         {
-            entity.Property(brand => brand.Name)
-                .HasMaxLength(150)
-                .IsRequired();
-
             entity.Property(brand => brand.Slug)
                 .HasMaxLength(150)
                 .IsRequired();
-
-            entity.Property(brand => brand.Description)
-                .HasMaxLength(1000);
 
             entity.Property(brand => brand.LogoUrl)
                 .HasMaxLength(2048);
 
             entity.HasIndex(brand => brand.Slug)
                 .IsUnique();
+        });
+        modelBuilder.Entity<BrandTranslation>(entity =>
+        {
+            entity.HasKey(translation => translation.Id);
+
+            entity.Property(translation => translation.CultureCode)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(translation => translation.Name)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            entity.Property(translation => translation.Description)
+                .HasMaxLength(1000);
+
+            // Один перевод на один бренд и одну локаль.
+            entity.HasIndex(translation => new
+            {
+                translation.BrandId,
+                translation.CultureCode
+            }).IsUnique();
+
+            entity.HasOne(translation => translation.Brand)
+                .WithMany(brand => brand.Translations)
+                .HasForeignKey(translation => translation.BrandId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Category>(entity =>
@@ -255,26 +278,19 @@ public class DataContext(DbContextOptions<DataContext> options)
 
         modelBuilder.Entity<Promotion>(entity =>
         {
-            entity.HasKey(p => p.Id);
+            entity.HasKey(promotion => promotion.Id);
 
-            entity.Property(p => p.Title)
+            entity.Property(promotion => promotion.Slug)
                 .HasMaxLength(200)
                 .IsRequired();
 
-            entity.Property(p => p.Slug)
-                .HasMaxLength(200)
-                .IsRequired();
-
-            entity.HasIndex(p => p.Slug)
+            entity.HasIndex(promotion => promotion.Slug)
                 .IsUnique();
 
-            entity.Property(p => p.Description)
-                .HasMaxLength(2000);
-
-            entity.Property(p => p.BannerImageUrl)
+            entity.Property(promotion => promotion.BannerImageUrl)
                 .HasMaxLength(2048);
 
-            entity.Property(p => p.ImageUrl)
+            entity.Property(promotion => promotion.ImageUrl)
                 .HasMaxLength(2048);
 
             entity.Property(promotion => promotion.DiscountType)
@@ -286,6 +302,33 @@ public class DataContext(DbContextOptions<DataContext> options)
 
             entity.Property(promotion => promotion.CardImageUrl)
                 .HasMaxLength(2048);
+        });
+        modelBuilder.Entity<PromotionTranslation>(entity =>
+        {
+            entity.HasKey(translation => translation.Id);
+
+            entity.Property(translation => translation.CultureCode)
+                .HasMaxLength(10)
+                .IsRequired();
+
+            entity.Property(translation => translation.Title)
+                .HasMaxLength(200)
+                .IsRequired();
+
+            entity.Property(translation => translation.Description)
+                .HasMaxLength(2000);
+
+            // Один перевод на одну акцию и одну локаль.
+            entity.HasIndex(translation => new
+            {
+                translation.PromotionId,
+                translation.CultureCode
+            }).IsUnique();
+
+            entity.HasOne(translation => translation.Promotion)
+                .WithMany(promotion => promotion.Translations)
+                .HasForeignKey(translation => translation.PromotionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<PromotionProduct>(entity =>
         {

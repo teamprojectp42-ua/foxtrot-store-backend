@@ -1,5 +1,4 @@
-﻿
-namespace foxtrot_store_backend.Models.Auth;
+﻿namespace foxtrot_store_backend.Models.Auth;
 
 public sealed class UserDto
 {
@@ -12,6 +11,8 @@ public sealed class UserDto
     public bool EmailConfirmed { get; set; }
 
     public bool IsLockedOut { get; set; }
+
+    public string? CultureCode { get; set; }
 
     public IList<string> Roles { get; set; } = new List<string>();
 }

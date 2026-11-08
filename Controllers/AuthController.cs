@@ -64,7 +64,7 @@ public class AuthController(
             return Unauthorized(new RestResponse
             {
                 Status = RestStatus.Unauthorized,
-                Data = new { message = "Invalid email or password." }
+                Data = new { message = localizer["Auth_InvalidCredentials"].Value }
             });
         }
 
@@ -78,7 +78,7 @@ public class AuthController(
             return Unauthorized(new RestResponse
             {
                 Status = RestStatus.Unauthorized,
-                Data = new { message = "Invalid email or password." }
+                Data = new { message = localizer["Auth_InvalidCredentials"].Value }
             });
         }
 
@@ -193,7 +193,7 @@ public class AuthController(
                 Status = RestStatus.NotFound,
                 Data = new
                 {
-                    message = "User not found."
+                    message = localizer["Auth_UserNotFound"].Value
                 }
             });
         }
@@ -224,7 +224,10 @@ public class AuthController(
             // Replace the existing locale claim.
             var existingLocaleClaim = localeClaims[0];
 
-            if (existingLocaleClaim.Value != cultureCode)
+            if (!string.Equals(
+                existingLocaleClaim.Value,
+                cultureCode,
+                StringComparison.OrdinalIgnoreCase))
             {
                 result = await userManager.ReplaceClaimAsync(
                     user,
@@ -292,7 +295,7 @@ public class AuthController(
         return Ok(new RestResponse
         {
             Status = RestStatus.Ok,
-            Data = new { message = "Password changed successfully." }
+            Data = new { message = localizer["Auth_PasswordChanged"].Value }
         });
     }
 
@@ -410,7 +413,7 @@ public class AuthController(
                 Status = RestStatus.BadRequest,
                 Data = new
                 {
-                    message = "You cannot delete your own account through this endpoint."
+                    message = localizer["Auth_CannotDeleteOwnAccount"].Value
                 }
             });
         }
@@ -428,9 +431,11 @@ public class AuthController(
         return Ok(new RestResponse
         {
             Status = RestStatus.Ok,
-            Data = new { message = "User deleted successfully." }
+            Data = new { message = localizer["Auth_UserDeleted"].Value }
         });
     }
+
+
 
     private string? GetCurrentUserId()
     {
@@ -512,10 +517,18 @@ public class AuthController(
         IdentityResult result)
     {
         var errors = result.Errors
-            .Select(error => new
+            .Select(error =>
             {
-                error.Code,
-                error.Description
+                var localized = localizer[$"Auth_{error.Code}"];
+
+                return new
+                {
+                    error.Code,
+
+                    Description = localized.ResourceNotFound
+                        ? error.Description
+                        : localized.Value
+                };
             })
             .ToArray();
 
