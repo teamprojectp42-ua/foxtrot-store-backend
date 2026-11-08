@@ -32,5 +32,7 @@ public sealed class CartItemDto
 
     public string AvailabilityStatus { get; set; } = string.Empty;
 
+    public string AvailabilityStatusDisplayName { get; set; } = string.Empty;
+
     public decimal LineTotal { get; set; }
 }

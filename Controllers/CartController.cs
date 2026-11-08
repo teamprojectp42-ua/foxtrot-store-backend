@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Globalization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -15,6 +16,8 @@ namespace foxtrot_store_backend.Controllers;
 public class CartController(DataAccessor dataAccessor) : ControllerBase
 {
     private readonly DataAccessor _dataAccessor = dataAccessor;
+    private string CurrentCultureCode =>
+        CultureInfo.CurrentUICulture.Name;
 
     // GET: api/cart
     [HttpGet]
@@ -33,6 +36,7 @@ public class CartController(DataAccessor dataAccessor) : ControllerBase
 
         var cart = await _dataAccessor.GetCartAsync(
             userId,
+            CurrentCultureCode,
             cancellationToken);
 
         return Ok(CreateResponse(
@@ -71,6 +75,7 @@ public class CartController(DataAccessor dataAccessor) : ControllerBase
                 userId,
                 request.ProductId,
                 request.Quantity,
+                CurrentCultureCode,
                 cancellationToken);
 
             return Ok(CreateResponse(
@@ -118,6 +123,7 @@ public class CartController(DataAccessor dataAccessor) : ControllerBase
                 userId,
                 productId,
                 request.Quantity,
+                CurrentCultureCode,
                 cancellationToken);
 
             if (cart is null)
@@ -164,6 +170,7 @@ public class CartController(DataAccessor dataAccessor) : ControllerBase
         var cart = await _dataAccessor.RemoveCartItemAsync(
             userId,
             productId,
+            CurrentCultureCode,
             cancellationToken);
 
         if (cart is null)
@@ -197,6 +204,7 @@ public class CartController(DataAccessor dataAccessor) : ControllerBase
 
         var cart = await _dataAccessor.ClearCartAsync(
             userId,
+            CurrentCultureCode,
             cancellationToken);
 
         return Ok(CreateResponse(

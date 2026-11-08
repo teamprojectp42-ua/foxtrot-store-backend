@@ -15,17 +15,21 @@ using foxtrot_store_backend.Models.Products.Translations;
 using foxtrot_store_backend.Models.Categories.Translations;
 using foxtrot_store_backend.Models.Brands.Translations;
 using foxtrot_store_backend.Models.Promotions.Translations;
+using foxtrot_store_backend.Resources;
+using Microsoft.Extensions.Localization;
 
 namespace foxtrot_store_backend.Data;
 
 public class DataAccessor(
     DataContext dataContext,
     UserManager<IdentityUser> userManager,
-    RoleManager<IdentityRole> roleManager)
+    RoleManager<IdentityRole> roleManager,
+    IStringLocalizer<SharedResources> localizer)
 {
     private readonly DataContext _dataContext = dataContext;
     private readonly UserManager<IdentityUser> _userManager = userManager;
     private readonly RoleManager<IdentityRole> _roleManager = roleManager;
+    private readonly IStringLocalizer<SharedResources> _localizer = localizer;
 
     public Task<Guid> GetDbIdentityAsync()
     {
@@ -4281,6 +4285,7 @@ public class DataAccessor(
 
     public async Task<CartResponseDto> GetCartAsync(
         string userId,
+        string cultureCode = DefaultCultureCode,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userId))
@@ -4289,20 +4294,25 @@ public class DataAccessor(
                 "User ID is required.",
                 nameof(userId));
         }
+
+        cultureCode = NormalizeCultureCode(cultureCode);
 
         var cartItems = await _dataContext.CartItems
             .AsNoTracking()
             .Where(item => item.Cart.UserId == userId)
             .Include(item => item.Product)
+                .ThenInclude(product => product.Translations)
             .ToListAsync(cancellationToken);
 
-        return await BuildCartResponseAsync(cartItems);
+        return await BuildCartResponseAsync(
+            cartItems,
+            cultureCode);
     }
-
     public async Task<CartResponseDto> AddCartItemAsync(
         string userId,
         Guid productId,
         int quantity,
+        string cultureCode = DefaultCultureCode,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userId))
@@ -4311,6 +4321,8 @@ public class DataAccessor(
                 "User ID is required.",
                 nameof(userId));
         }
+
+        cultureCode = NormalizeCultureCode(cultureCode);
 
         if (quantity <= 0)
         {
@@ -4368,9 +4380,9 @@ public class DataAccessor(
         if (newQuantity > product!.StockQuantity)
         {
             throw new InvalidOperationException(
-                $"Only {product.StockQuantity} units are currently " +
-                "available in stock. The requested quantity exceeds " +
-                "the available stock.");
+                _localizer[
+                    "Cart_InsufficientStock",
+                    product.StockQuantity].Value);
         }
 
         if (existingItem is not null)
@@ -4394,14 +4406,20 @@ public class DataAccessor(
 
         await transaction.CommitAsync(cancellationToken);
 
-        return await GetCartAsync(userId, cancellationToken);
+        return await GetCartAsync(
+            userId,
+            cultureCode,
+            cancellationToken);
     }
     public async Task<CartResponseDto?> UpdateCartItemQuantityAsync(
         string userId,
         Guid productId,
         int quantity,
+        string cultureCode = DefaultCultureCode,
         CancellationToken cancellationToken = default)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         if (quantity <= 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -4448,13 +4466,19 @@ public class DataAccessor(
 
         await transaction.CommitAsync(cancellationToken);
 
-        return await GetCartAsync(userId, cancellationToken);
+        return await GetCartAsync(
+            userId,
+            cultureCode,
+            cancellationToken);
     }
     public async Task<CartResponseDto?> RemoveCartItemAsync(
         string userId,
         Guid productId,
+        string cultureCode = DefaultCultureCode,
         CancellationToken cancellationToken = default)
     {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
         await using var transaction =
             await _dataContext.Database.BeginTransactionAsync(
                 cancellationToken);
@@ -4488,10 +4512,14 @@ public class DataAccessor(
 
         await transaction.CommitAsync(cancellationToken);
 
-        return await GetCartAsync(userId, cancellationToken);
+        return await GetCartAsync(
+            userId,
+            cultureCode,
+            cancellationToken);
     }
     public async Task<CartResponseDto> ClearCartAsync(
         string userId,
+        string cultureCode = DefaultCultureCode,
         CancellationToken cancellationToken = default)
     {
         await using var transaction =
@@ -4528,6 +4556,113 @@ public class DataAccessor(
     }
 
 
+
+    private async Task<CartResponseDto> BuildCartResponseAsync(
+        List<CartItem> cartItems,
+        string cultureCode)
+    {
+        cultureCode = NormalizeCultureCode(cultureCode);
+
+        var productIds = cartItems
+            .Select(item => item.ProductId)
+            .Distinct()
+            .ToList();
+
+        var promotionDiscounts = await GetActivePromotionDiscountsAsync(
+            productIds,
+            cultureCode);
+
+        var responseItems = new List<CartItemDto>();
+
+        foreach (var item in cartItems)
+        {
+            var product = item.Product;
+
+            var localizedTranslation =
+                product.Translations.FirstOrDefault(
+                    translation =>
+                        translation.CultureCode == cultureCode)
+                ??
+                product.Translations.FirstOrDefault(
+                    translation =>
+                        translation.CultureCode == DefaultCultureCode);
+
+            var promotion = CalculateBestPromotionPrice(
+                product.Price,
+                promotionDiscounts.GetValueOrDefault(product.Id));
+
+            var stockQuantity = Math.Max(
+                product.StockQuantity,
+                0);
+
+            var availableQuantity = product.IsActive
+                ? Math.Min(item.Quantity, stockQuantity)
+                : 0;
+
+            var availabilityStatus = !product.IsActive
+                ? "Inactive"
+                : stockQuantity == 0
+                    ? "OutOfStock"
+                    : item.Quantity > stockQuantity
+                        ? "InsufficientStock"
+                        : "Available";
+
+            var unitPrice = promotion?.DiscountedPrice
+                ?? product.Price;
+
+            var lineTotal = decimal.Round(
+                unitPrice * availableQuantity,
+                2,
+                MidpointRounding.AwayFromZero);
+
+            responseItems.Add(new CartItemDto
+            {
+                Id = item.Id,
+                ProductId = product.Id,
+                Sku = product.Sku,
+
+                ProductName = localizedTranslation?.Name
+                    ?? product.Sku,
+
+                OriginalUnitPrice = product.Price,
+                UnitPrice = unitPrice,
+
+                ActivePromotion = promotion,
+
+                RequestedQuantity = item.Quantity,
+                AvailableQuantity = availableQuantity,
+                StockQuantity = stockQuantity,
+
+                IsProductActive = product.IsActive,
+                IsAvailable = availableQuantity > 0,
+
+                IsQuantityAdjusted =
+                    item.Quantity != availableQuantity,
+
+                AvailabilityStatus = availabilityStatus,
+
+                AvailabilityStatusDisplayName =
+                    _localizer[$"CartAvailability_{availabilityStatus}"].Value,
+
+                LineTotal = lineTotal
+            });
+        }
+
+        var totalAmount = decimal.Round(
+            responseItems.Sum(item => item.LineTotal),
+            2,
+            MidpointRounding.AwayFromZero);
+
+        return new CartResponseDto
+        {
+            Items = responseItems,
+
+            TotalAvailableQuantity = responseItems.Sum(
+                item => item.AvailableQuantity),
+
+            TotalAmount = totalAmount
+        };
+    }
     private async Task<Cart> GetOrCreateCartAsync(
         string userId,
         CancellationToken cancellationToken)
@@ -4604,32 +4739,34 @@ public class DataAccessor(
 
         return carts.SingleOrDefault();
     }
-    private static void ValidateCartProduct(
+    private void ValidateCartProduct(
         Product? product,
         int quantity)
     {
         if (product is null)
         {
             throw new KeyNotFoundException(
-                "Product not found.");
+                _localizer["Cart_ProductNotFound"].Value);
         }
 
         if (!product.IsActive)
         {
             throw new InvalidOperationException(
-                "The product is inactive and cannot be purchased.");
+                _localizer["Cart_ProductInactive"].Value);
         }
 
         if (product.StockQuantity <= 0)
         {
             throw new InvalidOperationException(
-                "The product is out of stock.");
+                _localizer["Cart_OutOfStock"].Value);
         }
 
         if (quantity > product.StockQuantity)
         {
             throw new InvalidOperationException(
-                $"Only {product.StockQuantity} units are currently available.");
+                _localizer[
+                    "Cart_InsufficientStock",
+                    product.StockQuantity].Value);
         }
     }
     private async Task<CartResponseDto> BuildCartResponseAsync(
@@ -4762,14 +4899,16 @@ public class DataAccessor(
     public async Task<OrderDto> CreateOrderAsync(
         string userId,
         CreateOrderRequest request,
+        string cultureCode = DefaultCultureCode,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userId))
         {
             throw new ArgumentException(
-                "User ID is required.",
-                nameof(userId));
+                _localizer["Order_RequiredFields"].Value);
         }
+
+        cultureCode = NormalizeCultureCode(cultureCode);
 
         ArgumentNullException.ThrowIfNull(request);
 
@@ -4779,7 +4918,7 @@ public class DataAccessor(
             string.IsNullOrWhiteSpace(request.DeliveryAddress))
         {
             throw new ArgumentException(
-                "All required delivery fields must be provided.");
+                _localizer["Order_RequiredFields"].Value);
         }
 
         await using var transaction =
@@ -4794,7 +4933,7 @@ public class DataAccessor(
         if (cart is null)
         {
             throw new InvalidOperationException(
-                "Your cart is empty.");
+                _localizer["Order_EmptyCart"].Value);
         }
 
         var cartItems = await _dataContext.CartItems
@@ -4805,7 +4944,7 @@ public class DataAccessor(
         if (cartItems.Count == 0)
         {
             throw new InvalidOperationException(
-                "Your cart is empty.");
+                _localizer["Order_EmptyCart"].Value);
         }
 
         // Lock all products in a consistent order.
@@ -4824,7 +4963,7 @@ public class DataAccessor(
             if (product is null)
             {
                 throw new InvalidOperationException(
-                    "One or more products in your cart no longer exist.");
+                    _localizer["Order_ProductNotFound"].Value);
             }
 
             products.Add(productId, product);
@@ -4835,19 +4974,50 @@ public class DataAccessor(
         {
             var product = products[item.ProductId];
 
+            if (!product.IsActive)
+            {
+                throw new InvalidOperationException(
+                    _localizer["Order_ProductInactive", product.Sku].Value);
+            }
 
             if (product.StockQuantity < item.Quantity)
             {
                 throw new InvalidOperationException(
-                    $"Requested: {item.Quantity}. " +
-                    $"Available: {product.StockQuantity}. " +
-                    "Please update your cart.");
+                    _localizer[
+                        "Order_InsufficientStock",
+                        item.Quantity,
+                        product.StockQuantity].Value);
             }
         }
 
-        // Retrieve current promotions using the existing discount logic.
+        var productIds = products.Keys.ToList();
+
+        var productTranslations = await _dataContext.ProductTranslations
+            .AsNoTracking()
+            .Where(translation =>
+                productIds.Contains(translation.ProductId) &&
+                (
+                    translation.CultureCode == cultureCode ||
+                    translation.CultureCode == DefaultCultureCode
+                ))
+            .Select(translation => new
+            {
+                translation.ProductId,
+                translation.CultureCode,
+                translation.Name
+            })
+            .ToListAsync(cancellationToken);
+
+        var productNames = productTranslations.ToDictionary(
+            translation => (
+                translation.ProductId,
+                translation.CultureCode),
+            translation => translation.Name);
+
+
         var promotionDiscounts = await GetActivePromotionDiscountsAsync(
-            products.Keys);
+            products.Keys,
+            cultureCode);
 
         var now = DateTime.UtcNow;
 
@@ -4884,12 +5054,24 @@ public class DataAccessor(
                 2,
                 MidpointRounding.AwayFromZero);
 
+            var productName =
+                productNames.GetValueOrDefault(
+                    (product.Id, cultureCode))
+                ??
+                productNames.GetValueOrDefault(
+                    (product.Id, DefaultCultureCode))
+                ??
+                product.Sku;
+
             order.Items.Add(new OrderItem
             {
                 Id = Guid.NewGuid(),
                 OrderId = order.Id,
                 ProductId = product.Id,
+
+                ProductName = productName,
                 ProductSku = product.Sku,
+
                 UnitPrice = unitPrice,
                 Quantity = cartItem.Quantity,
                 TotalPrice = lineTotal
@@ -4965,8 +5147,10 @@ public class DataAccessor(
         if (!CanChangeOrderStatus(order.Status, newStatus))
         {
             throw new InvalidOperationException(
-                $"Order status cannot be changed from " +
-                $"'{order.Status}' to '{newStatus}'.");
+                _localizer[
+                    "Order_InvalidStatusTransition",
+                    order.Status,
+                    newStatus].Value);
         }
 
         if (newStatus == OrderStatus.Cancelled)
@@ -4991,8 +5175,7 @@ public class DataAccessor(
                 if (product is null)
                 {
                     throw new InvalidOperationException(
-                        $"Product '{productId}' referenced by the order " +
-                        "could not be found.");
+                        _localizer["Order_ProductNotFound"].Value);
                 }
 
                 products.Add(productId, product);
@@ -5093,7 +5276,7 @@ public class DataAccessor(
 
         return products.SingleOrDefault();
     }
-    private static OrderDto MapOrderToDto(Order order)
+    private OrderDto MapOrderToDto(Order order)
     {
         return new OrderDto
         {
@@ -5104,7 +5287,12 @@ public class DataAccessor(
             DeliveryAddress = order.DeliveryAddress,
             Comment = order.Comment,
             TotalAmount = order.TotalAmount,
+
             Status = order.Status.ToString(),
+
+            StatusDisplayName =
+                _localizer[$"OrderStatus_{order.Status}"].Value,
+
             CreatedAt = order.CreatedAt,
             UpdatedAt = order.UpdatedAt,
 

@@ -125,4 +125,58 @@
 	<data name="Auth_UserHasOrders" xml:space="preserve">
     <value>Неможливо видалити користувача, який має замовлення.</value>
 </data>
+	<data name="CartAvailability_Available" xml:space="preserve">
+    <value>В наявності</value>
+</data>
+	<data name="CartAvailability_Inactive" xml:space="preserve">
+    <value>Неактивний товар</value>
+</data>
+	<data name="CartAvailability_OutOfStock" xml:space="preserve">
+    <value>Немає в наявності</value>
+</data>
+	<data name="CartAvailability_InsufficientStock" xml:space="preserve">
+    <value>Недостатня кількість на складі</value>
+</data>
+	<data name="OrderStatus_New" xml:space="preserve">
+    <value>Нове</value>
+</data>
+	<data name="OrderStatus_Processing" xml:space="preserve">
+    <value>В обробці</value>
+</data>
+	<data name="OrderStatus_Completed" xml:space="preserve">
+    <value>Виконано</value>
+</data>
+	<data name="OrderStatus_Cancelled" xml:space="preserve">
+    <value>Скасовано</value>
+</data>
+	<data name="Cart_ProductNotFound" xml:space="preserve">
+    <value>Товар не знайдено.</value>
+</data>
+	<data name="Cart_ProductInactive" xml:space="preserve">
+    <value>Цей товар неактивний і його неможливо придбати.</value>
+</data>
+	<data name="Cart_OutOfStock" xml:space="preserve">
+    <value>Цього товару немає в наявності.</value>
+</data>
+	<data name="Cart_InsufficientStock" xml:space="preserve">
+    <value>Зараз доступно лише {0} одиниць товару.</value>
+</data>
+	<data name="Order_RequiredFields" xml:space="preserve">
+    <value>Необхідно заповнити всі обов'язкові поля доставки.</value>
+</data>
+	<data name="Order_EmptyCart" xml:space="preserve">
+    <value>Ваш кошик порожній.</value>
+</data>
+	<data name="Order_ProductInactive" xml:space="preserve">
+    <value>Товар '{0}' неактивний і його неможливо придбати.</value>
+</data>
+	<data name="Order_ProductNotFound" xml:space="preserve">
+    <value>Один або декілька товарів у вашому кошику більше не існують.</value>
+</data>
+	<data name="Order_InsufficientStock" xml:space="preserve">
+    <value>Запитана кількість: {0}. Доступна кількість: {1}. Будь ласка, оновіть кошик.</value>
+</data>
+	<data name="Order_InvalidStatusTransition" xml:space="preserve">
+    <value>Неможливо змінити статус замовлення з '{0}' на '{1}'.</value>
+</data>
 </root>

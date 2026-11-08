@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Globalization;
 
 namespace foxtrot_store_backend.Controllers;
 
@@ -15,6 +16,8 @@ namespace foxtrot_store_backend.Controllers;
 public class OrdersController(DataAccessor dataAccessor) : ControllerBase
 {
     private readonly DataAccessor _dataAccessor = dataAccessor;
+    private string CurrentCultureCode =>
+        CultureInfo.CurrentUICulture.Name;
 
     // POST: api/orders
     // Create an order from the authenticated user's cart.
@@ -39,6 +42,7 @@ public class OrdersController(DataAccessor dataAccessor) : ControllerBase
             var order = await _dataAccessor.CreateOrderAsync(
                 userId,
                 request,
+                CurrentCultureCode,
                 cancellationToken);
 
             return StatusCode(

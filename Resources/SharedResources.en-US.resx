@@ -126,4 +126,58 @@
 		<data name="Auth_UserHasOrders" xml:space="preserve">
 		<value>Cannot delete a user who has existing orders.</value>
 	</data>
+	<data name="CartAvailability_Available" xml:space="preserve">
+    <value>Available</value>
+	</data>
+		<data name="CartAvailability_Inactive" xml:space="preserve">
+		<value>Inactive product</value>
+	</data>
+		<data name="CartAvailability_OutOfStock" xml:space="preserve">
+		<value>Out of stock</value>
+	</data>
+		<data name="CartAvailability_InsufficientStock" xml:space="preserve">
+		<value>Insufficient stock</value>
+	</data>
+		<data name="OrderStatus_New" xml:space="preserve">
+		<value>New</value>
+	</data>
+		<data name="OrderStatus_Processing" xml:space="preserve">
+		<value>Processing</value>
+	</data>
+		<data name="OrderStatus_Completed" xml:space="preserve">
+		<value>Completed</value>
+	</data>
+		<data name="OrderStatus_Cancelled" xml:space="preserve">
+		<value>Cancelled</value>
+	</data>
+	<data name="Cart_ProductNotFound" xml:space="preserve">
+    <value>Product not found.</value>
+	</data>
+		<data name="Cart_ProductInactive" xml:space="preserve">
+		<value>This product is inactive and cannot be purchased.</value>
+	</data>
+		<data name="Cart_OutOfStock" xml:space="preserve">
+		<value>This product is out of stock.</value>
+	</data>
+		<data name="Cart_InsufficientStock" xml:space="preserve">
+		<value>Only {0} units are currently available.</value>
+	</data>
+		<data name="Order_RequiredFields" xml:space="preserve">
+		<value>All required delivery fields must be provided.</value>
+	</data>
+		<data name="Order_EmptyCart" xml:space="preserve">
+		<value>Your cart is empty.</value>
+	</data>
+		<data name="Order_ProductInactive" xml:space="preserve">
+		<value>Product '{0}' is inactive and cannot be purchased.</value>
+	</data>
+		<data name="Order_ProductNotFound" xml:space="preserve">
+		<value>One or more products in your cart no longer exist.</value>
+	</data>
+		<data name="Order_InsufficientStock" xml:space="preserve">
+		<value>Requested: {0}. Available: {1}. Please update your cart.</value>
+	</data>
+		<data name="Order_InvalidStatusTransition" xml:space="preserve">
+		<value>Order status cannot be changed from '{0}' to '{1}'.</value>
+	</data>
 </root>
