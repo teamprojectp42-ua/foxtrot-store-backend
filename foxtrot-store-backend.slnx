@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="../Foxtrot-Store-Tests/Foxtrot-Store-Tests.csproj" Id="1e429859-6a03-470d-a668-f94d79fcb615" />
   <Project Path="foxtrot-store-backend.csproj" />
 </Solution>

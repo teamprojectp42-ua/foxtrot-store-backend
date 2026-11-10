@@ -520,11 +520,13 @@ namespace foxtrot_store_backend.Migrations
 
                     b.Property<string>("Sku")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasMaxLength(100)
+                        .HasColumnType("varchar(100)");
 
                     b.Property<string>("Slug")
                         .IsRequired()
-                        .HasColumnType("varchar(255)");
+                        .HasMaxLength(150)
+                        .HasColumnType("varchar(150)");
 
                     b.Property<int>("StockQuantity")
                         .HasColumnType("int");
@@ -535,12 +537,6 @@ namespace foxtrot_store_backend.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BrandId");
-
-                    b.HasIndex("Sku")
-                        .IsUnique();
-
-                    b.HasIndex("Slug")
-                        .IsUnique();
 
                     b.ToTable("Products");
                 });
