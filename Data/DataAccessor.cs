@@ -3344,7 +3344,7 @@ public class DataAccessor(
                 });
         }
 
-        await _dataContext.SaveChangesAsync();
+        await SavePromotionChangesAsync(slug);
 
         return await GetPromotionForAdminByIdAsync(
             promotion.Id,
@@ -3435,7 +3435,7 @@ public class DataAccessor(
                 });
         }
 
-        await _dataContext.SaveChangesAsync();
+        await SavePromotionChangesAsync(slug, id);
 
         return await GetPromotionForAdminByIdAsync(
             promotion.Id,
@@ -3952,6 +3952,28 @@ public class DataAccessor(
         var fileId = Path.GetFileNameWithoutExtension(imageKey);
 
         return Guid.TryParseExact(fileId, "N", out _);
+    }
+    private async Task SavePromotionChangesAsync(
+        string normalizedSlug,
+        Guid? excludedPromotionId = null)
+    {
+        try
+        {
+            await _dataContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException exception)
+        {
+            if (await PromotionSlugExistsAsync(
+                    normalizedSlug,
+                    excludedPromotionId))
+            {
+                throw new InvalidOperationException(
+                    "A promotion with this slug already exists.",
+                    exception);
+            }
+
+            throw;
+        }
     }
 
 

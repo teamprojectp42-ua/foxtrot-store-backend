@@ -18,7 +18,7 @@ public class PromotionCreateRequest
     [MinLength(1)]
     public List<PromotionTranslationRequest> Translations { get; set; } = [];
 
-    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonConverter(typeof(PromotionDiscountTypeJsonConverter))]
     public PromotionDiscountType? DiscountType { get; set; }
 
     public decimal? DiscountValue { get; set; }
