@@ -251,9 +251,9 @@ public class ProductsController(
 
         var product = await _dataAccessor.GetProductBySlugAsync(
             slug,
-            CurrentCultureCode);
+            CurrentCultureCode,
+            includeInactiveProduct: IsAdmin);
 
-        // Admin receives the full translation collection.
         if (product is not null && IsAdmin)
         {
             product = await _dataAccessor.GetProductForAdminByIdAsync(

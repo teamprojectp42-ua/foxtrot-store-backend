@@ -179,4 +179,7 @@
 	<data name="Order_InvalidStatusTransition" xml:space="preserve">
     <value>Неможливо змінити статус замовлення з '{0}' на '{1}'.</value>
 </data>
+	<data name="Auth_InvalidUserName" xml:space="preserve">
+    <value>Ім'я користувача має містити від 2 до 100 символів.</value>
+</data>
 </root>

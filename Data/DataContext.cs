@@ -46,13 +46,22 @@ public class DataContext(DbContextOptions<DataContext> options)
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<IdentityUser>(entity =>
+        {
+            entity.HasIndex(user => user.NormalizedEmail)
+                .IsUnique()
+                .HasDatabaseName("EmailIndex");
+        });
+
         modelBuilder.Entity<Product>(entity =>
         {
-            entity.HasIndex(product => product.Sku)
-                .IsUnique();
+            entity.Property(product => product.Sku)
+                .HasMaxLength(100)
+                .IsRequired();
 
-            entity.HasIndex(product => product.Slug)
-                .IsUnique();
+            entity.Property(product => product.Slug)
+                .HasMaxLength(150)
+                .IsRequired();
 
             entity.HasOne(product => product.Brand)
                 .WithMany(brand => brand.Products)

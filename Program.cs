@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -90,10 +91,23 @@ builder.Services
     .AddErrorDescriber<LocalizedIdentityErrorDescriber>();
 
 // JWT
-var jwtKey = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException(
-        "JWT signing key is not configured."
-    );
+var jwtKey = builder.Configuration["Jwt:Key"];
+
+if (string.IsNullOrWhiteSpace(jwtKey))
+{
+    throw new InvalidOperationException(
+        "JWT signing key is not configured.");
+}
+
+var jwtKeyBytes = Encoding.UTF8.GetBytes(jwtKey);
+
+if (jwtKeyBytes.Length < 32)
+{
+    throw new InvalidOperationException(
+        "JWT signing key must contain at least 32 bytes for HS256.");
+}
+
+var signingKey = new SymmetricSecurityKey(jwtKeyBytes);
 
 var jwtIssuer = builder.Configuration["Jwt:Issuer"]
     ?? "FoxtrotStore";
@@ -124,16 +138,80 @@ builder.Services
                 ValidAudience = jwtAudience,
 
                 ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(
-                    Encoding.UTF8.GetBytes(jwtKey)
-                ),
+                IssuerSigningKey = signingKey,
 
-                ValidateLifetime = true,
+                ValidAlgorithms =
+                [
+                    SecurityAlgorithms.HmacSha256
+                ],
                 ClockSkew = TimeSpan.FromSeconds(30),
 
                 NameClaimType = "unique_name",
                 RoleClaimType = "role"
             };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+
+                var userId = principal?
+                    .FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+
+                var tokenSecurityStamp = principal?
+                    .FindFirst("security_stamp")?.Value;
+
+                if (string.IsNullOrWhiteSpace(userId) ||
+                    string.IsNullOrWhiteSpace(tokenSecurityStamp))
+                {
+                    context.Fail("Invalid access token.");
+                    return;
+                }
+
+                var userManager = context.HttpContext.RequestServices
+                    .GetRequiredService<UserManager<IdentityUser>>();
+
+                var user = await userManager.FindByIdAsync(userId);
+
+                if (user is null)
+                {
+                    context.Fail("User no longer exists.");
+                    return;
+                }
+
+                var currentSecurityStamp =
+                    await userManager.GetSecurityStampAsync(user);
+
+                if (!string.Equals(
+                    currentSecurityStamp,
+                    tokenSecurityStamp,
+                    StringComparison.Ordinal))
+                {
+                    context.Fail("Access token has been revoked.");
+                    return;
+                }
+
+                if (await userManager.IsLockedOutAsync(user))
+                {
+                    context.Fail("User account is locked out.");
+                    return;
+                }
+
+                var tokenRoles = principal!
+                    .FindAll("role")
+                    .Select(claim => claim.Value)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var currentRoles = (await userManager.GetRolesAsync(user))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (!tokenRoles.SetEquals(currentRoles))
+                {
+                    context.Fail("User roles have changed.");
+                }
+            }
+        };
     });
 
 builder.Services.AddAuthorization();

@@ -1,5 +1,4 @@
-﻿
-namespace foxtrot_store_backend.Models.Auth;
+﻿namespace foxtrot_store_backend.Models.Auth;
 
 public sealed class AuthResponseDto
 {

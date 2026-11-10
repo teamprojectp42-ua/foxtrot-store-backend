@@ -180,4 +180,7 @@
 		<data name="Order_InvalidStatusTransition" xml:space="preserve">
 		<value>Order status cannot be changed from '{0}' to '{1}'.</value>
 	</data>
+		<data name="Auth_InvalidUserName" xml:space="preserve">
+		<value>Username must contain between 2 and 100 characters.</value>
+	</data>
 </root>

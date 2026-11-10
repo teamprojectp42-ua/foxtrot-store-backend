@@ -473,6 +473,7 @@ public class DataAccessor(
                 PrimaryImageUrl = product.Images
                     .OrderByDescending(image => image.IsPrimary)
                     .ThenBy(image => image.SortOrder)
+                    .ThenBy(image => image.Id)
                     .Select(image => image.ImageUrl)
                     .FirstOrDefault(),
 
@@ -686,7 +687,8 @@ public class DataAccessor(
     }
     public async Task<ProductDetailsDto?> GetProductBySlugAsync(
         string slug,
-        string cultureCode = DefaultCultureCode)
+        string cultureCode = DefaultCultureCode,
+        bool includeInactiveProduct = false)
     {
         cultureCode = NormalizeCultureCode(cultureCode);
 
@@ -701,7 +703,7 @@ public class DataAccessor(
             .AsNoTracking()
             .Where(product =>
                 product.Slug == slug &&
-                product.IsActive)
+                (includeInactiveProduct || product.IsActive))
             .Select(product => new ProductDetailsDto
             {
                 Id = product.Id,
@@ -3957,9 +3959,9 @@ public class DataAccessor(
 
     public async Task<IReadOnlyList<UserDto>> GetUsersAsync()
     {
-        var users = _userManager.Users
+        var users = await _userManager.Users
             .OrderBy(user => user.UserName)
-            .ToList();
+            .ToListAsync();
 
         var result = new List<UserDto>();
 
@@ -3994,49 +3996,93 @@ public class DataAccessor(
             ? AppRoles.User
             : role.Trim();
 
-        if (!AppRoles.All.Contains(selectedRole, StringComparer.OrdinalIgnoreCase))
+        if (!AppRoles.All.Contains(
+            selectedRole,
+            StringComparer.OrdinalIgnoreCase))
         {
             return (null, IdentityResult.Failed(new IdentityError
             {
                 Code = "InvalidRole",
-                Description = "Допустимые роли: User, Manager или Admin."
+                Description = "Allowed roles: User, Manager or Admin."
             }));
         }
 
         selectedRole = AppRoles.All.First(r =>
-            string.Equals(r, selectedRole, StringComparison.OrdinalIgnoreCase));
+            string.Equals(
+                r,
+                selectedRole,
+                StringComparison.OrdinalIgnoreCase));
 
         if (!await _roleManager.RoleExistsAsync(selectedRole))
         {
             return (null, IdentityResult.Failed(new IdentityError
             {
                 Code = "RoleNotFound",
-                Description = $"Роль '{selectedRole}' не существует в базе данных."
+                Description = $"Role '{selectedRole}' does not exist."
             }));
         }
 
+        var normalizedUserName = userName.Trim();
+        var normalizedEmail = email.Trim();
+
+        if (normalizedUserName.Length < 2 ||
+            normalizedUserName.Length > 100)
+        {
+            return (null, IdentityResult.Failed(new IdentityError
+            {
+                Code = "InvalidUserName",
+                Description = "Username must contain between 2 and 100 characters."
+            }));
+        }
+
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync();
+
         var user = new IdentityUser
         {
-            UserName = userName.Trim(),
-            Email = email.Trim()
+            UserName = normalizedUserName,
+            Email = normalizedEmail
         };
 
-        var createResult = await _userManager.CreateAsync(user, password);
+        var createResult = await _userManager.CreateAsync(
+            user,
+            password);
 
         if (!createResult.Succeeded)
+        {
+            await transaction.RollbackAsync();
             return (null, createResult);
+        }
 
-        var roleResult = await _userManager.AddToRoleAsync(user, selectedRole);
+        var roleResult = await _userManager.AddToRoleAsync(
+            user,
+            selectedRole);
 
         if (!roleResult.Succeeded)
         {
-            await _userManager.DeleteAsync(user);
+            await transaction.RollbackAsync();
             return (null, roleResult);
         }
 
+        await transaction.CommitAsync();
+
         return (user, IdentityResult.Success);
     }
-    public async Task<IdentityResult> UpdateUserAsync(
+    public Task<IdentityResult> UpdateUserAsync(
+        string id,
+        string userName,
+        string email)
+    {
+        return UpdateUserDetailsAsync(id, userName, email);
+    }
+    public Task<IdentityResult> UpdateUserProfileAsync(
+        string id,
+        string userName,
+        string email)
+    {
+        return UpdateUserDetailsAsync(id, userName, email);
+    }
+    private async Task<IdentityResult> UpdateUserDetailsAsync(
         string id,
         string userName,
         string email)
@@ -4052,8 +4098,34 @@ public class DataAccessor(
             });
         }
 
-        user.UserName = userName.Trim();
-        user.Email = email.Trim();
+        var normalizedUserName = userName.Trim();
+        var normalizedEmail = email.Trim();
+
+        if (normalizedUserName.Length < 2 ||
+            normalizedUserName.Length > 100)
+        {
+            return IdentityResult.Failed(new IdentityError
+            {
+                Code = "InvalidUserName",
+                Description = "Username must contain between 2 and 100 characters."
+            });
+        }
+
+        var newNormalizedEmail =
+            _userManager.NormalizeEmail(normalizedEmail);
+
+        var emailChanged = !string.Equals(
+            user.NormalizedEmail,
+            newNormalizedEmail,
+            StringComparison.Ordinal);
+
+        user.UserName = normalizedUserName;
+        user.Email = normalizedEmail;
+
+        if (emailChanged)
+        {
+            user.EmailConfirmed = false;
+        }
 
         return await _userManager.UpdateAsync(user);
     }
@@ -4068,7 +4140,7 @@ public class DataAccessor(
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "UserNotFound",
-                Description = "Пользователь не найден."
+                Description = "User was not found."
             });
         }
 
@@ -4077,19 +4149,22 @@ public class DataAccessor(
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "InvalidRole",
-                Description = "Укажите роль User, Manager или Admin."
+                Description = "A valid role must be specified."
             });
         }
 
         var selectedRole = AppRoles.All.FirstOrDefault(r =>
-            string.Equals(r, role.Trim(), StringComparison.OrdinalIgnoreCase));
+            string.Equals(
+                r,
+                role.Trim(),
+                StringComparison.OrdinalIgnoreCase));
 
         if (selectedRole is null)
         {
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "InvalidRole",
-                Description = "Допустимые роли: User, Manager или Admin."
+                Description = "Allowed roles: User, Manager or Admin."
             });
         }
 
@@ -4098,26 +4173,50 @@ public class DataAccessor(
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "RoleNotFound",
-                Description = $"Роль '{selectedRole}' не существует."
+                Description = $"Role '{selectedRole}' does not exist."
             });
         }
 
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync();
+
+        await LockAdminRoleAsync();
+
         var currentRoles = await _userManager.GetRolesAsync(user);
 
-        if (currentRoles.Count == 1 && currentRoles[0] == selectedRole)
-            return IdentityResult.Success;
-
-        if (currentRoles.Contains(AppRoles.Admin) &&
-            selectedRole != AppRoles.Admin)
+        if (currentRoles.Count == 1 &&
+            string.Equals(
+                currentRoles[0],
+                selectedRole,
+                StringComparison.OrdinalIgnoreCase))
         {
-            var admins = await _userManager.GetUsersInRoleAsync(AppRoles.Admin);
+            await transaction.CommitAsync();
+            return IdentityResult.Success;
+        }
 
-            if (admins.Count <= 1)
+        var currentlyAdmin = currentRoles.Any(r =>
+            string.Equals(
+                r,
+                AppRoles.Admin,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (currentlyAdmin &&
+            !string.Equals(
+                selectedRole,
+                AppRoles.Admin,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var administrators = await _userManager.GetUsersInRoleAsync(
+                AppRoles.Admin);
+
+            if (administrators.Count <= 1)
             {
+                await transaction.RollbackAsync();
+
                 return IdentityResult.Failed(new IdentityError
                 {
                     Code = "LastAdmin",
-                    Description = "Нельзя снять роль Admin с последнего администратора."
+                    Description = "The last administrator cannot lose the Admin role."
                 });
             }
         }
@@ -4129,41 +4228,34 @@ public class DataAccessor(
                 currentRoles);
 
             if (!removeResult.Succeeded)
+            {
+                await transaction.RollbackAsync();
                 return removeResult;
+            }
         }
 
-        var addResult = await _userManager.AddToRoleAsync(user, selectedRole);
+        var addResult = await _userManager.AddToRoleAsync(
+            user,
+            selectedRole);
 
         if (!addResult.Succeeded)
         {
-            if (currentRoles.Count > 0)
-                await _userManager.AddToRolesAsync(user, currentRoles);
-
+            await transaction.RollbackAsync();
             return addResult;
         }
 
-        return IdentityResult.Success;
-    }
-    public async Task<IdentityResult> UpdateUserProfileAsync(
-        string id,
-        string userName,
-        string email)
-    {
-        var user = await _userManager.FindByIdAsync(id);
+        // Invalidate previously issued access tokens.
+        var stampResult = await _userManager.UpdateSecurityStampAsync(user);
 
-        if (user is null)
+        if (!stampResult.Succeeded)
         {
-            return IdentityResult.Failed(new IdentityError
-            {
-                Code = "UserNotFound",
-                Description = "User was not found."
-            });
+            await transaction.RollbackAsync();
+            return stampResult;
         }
 
-        user.UserName = userName.Trim();
-        user.Email = email.Trim();
+        await transaction.CommitAsync();
 
-        return await _userManager.UpdateAsync(user);
+        return IdentityResult.Success;
     }
     public async Task<IdentityResult> ChangeUserPasswordAsync(
         string id,
@@ -4199,6 +4291,11 @@ public class DataAccessor(
             });
         }
 
+        await using var transaction =
+            await _dataContext.Database.BeginTransactionAsync();
+
+        await LockAdminRoleAsync();
+
         var isAdmin = await _userManager.IsInRoleAsync(
             user,
             AppRoles.Admin);
@@ -4210,6 +4307,8 @@ public class DataAccessor(
 
             if (administrators.Count <= 1)
             {
+                await transaction.RollbackAsync();
+
                 return IdentityResult.Failed(new IdentityError
                 {
                     Code = "LastAdmin",
@@ -4223,6 +4322,8 @@ public class DataAccessor(
 
         if (hasOrders)
         {
+            await transaction.RollbackAsync();
+
             return IdentityResult.Failed(new IdentityError
             {
                 Code = "UserHasOrders",
@@ -4230,7 +4331,17 @@ public class DataAccessor(
             });
         }
 
-        return await _userManager.DeleteAsync(user);
+        var result = await _userManager.DeleteAsync(user);
+
+        if (!result.Succeeded)
+        {
+            await transaction.RollbackAsync();
+            return result;
+        }
+
+        await transaction.CommitAsync();
+
+        return IdentityResult.Success;
     }
     private async Task<UserDto> MapUserAsync(IdentityUser user)
     {
@@ -4258,6 +4369,29 @@ public class DataAccessor(
         };
     }
 
+
+    private async Task LockAdminRoleAsync()
+    {
+        var normalizedRoleName = _roleManager.NormalizeKey(AppRoles.Admin);
+
+        if (string.IsNullOrWhiteSpace(normalizedRoleName))
+        {
+            throw new InvalidOperationException(
+                "Admin role name could not be normalized.");
+        }
+
+        var lockedRoles = await _dataContext.Roles
+            .FromSqlInterpolated(
+                $"SELECT * FROM `AspNetRoles` WHERE `NormalizedName` = {normalizedRoleName} FOR UPDATE")
+            .AsNoTracking()
+            .ToListAsync();
+
+        if (lockedRoles.Count != 1)
+        {
+            throw new InvalidOperationException(
+                "Admin role is missing or duplicated.");
+        }
+    }
     public async Task EnsureRolesCreatedAsync()
     {
         foreach (var role in AppRoles.All)
@@ -4768,93 +4902,6 @@ public class DataAccessor(
                     "Cart_InsufficientStock",
                     product.StockQuantity].Value);
         }
-    }
-    private async Task<CartResponseDto> BuildCartResponseAsync(
-        List<CartItem> cartItems)
-    {
-        var productIds = cartItems
-            .Select(item => item.ProductId)
-            .Distinct()
-            .ToList();
-
-        var promotionDiscounts = await GetActivePromotionDiscountsAsync(
-            productIds);
-
-        var responseItems = new List<CartItemDto>();
-
-        foreach (var item in cartItems)
-        {
-            var product = item.Product;
-
-            var promotion = CalculateBestPromotionPrice(
-                product.Price,
-                promotionDiscounts.GetValueOrDefault(product.Id));
-
-            var stockQuantity = Math.Max(
-                product.StockQuantity,
-                0);
-
-            var availableQuantity = product.IsActive
-                ? Math.Min(item.Quantity, stockQuantity)
-                : 0;
-
-            var availabilityStatus = !product.IsActive
-                ? "Inactive"
-                : stockQuantity == 0
-                    ? "OutOfStock"
-                    : item.Quantity > stockQuantity
-                        ? "InsufficientStock"
-                        : "Available";
-
-            var unitPrice = promotion?.DiscountedPrice
-                ?? product.Price;
-
-            var lineTotal = decimal.Round(
-                unitPrice * availableQuantity,
-                2,
-                MidpointRounding.AwayFromZero);
-
-            responseItems.Add(new CartItemDto
-            {
-                Id = item.Id,
-                ProductId = product.Id,
-                Sku = product.Sku,
-
-                OriginalUnitPrice = product.Price,
-                UnitPrice = unitPrice,
-
-                ActivePromotion = promotion,
-
-                RequestedQuantity = item.Quantity,
-                AvailableQuantity = availableQuantity,
-                StockQuantity = stockQuantity,
-
-                IsProductActive = product.IsActive,
-                IsAvailable = availableQuantity > 0,
-
-                IsQuantityAdjusted =
-                    item.Quantity != availableQuantity,
-
-                AvailabilityStatus = availabilityStatus,
-
-                LineTotal = lineTotal
-            });
-        }
-
-        var totalAmount = decimal.Round(
-            responseItems.Sum(item => item.LineTotal),
-            2,
-            MidpointRounding.AwayFromZero);
-
-        return new CartResponseDto
-        {
-            Items = responseItems,
-
-            TotalAvailableQuantity = responseItems.Sum(
-                item => item.AvailableQuantity),
-
-            TotalAmount = totalAmount
-        };
     }
 
     // Order

@@ -93,7 +93,7 @@ public class AuthController(
 
         var expiresAt = DateTime.UtcNow.AddHours(1);
 
-        var token = CreateAccessToken(
+        var token = await CreateAccessTokenAsync(
             user,
             roles,
             expiresAt,
@@ -255,7 +255,7 @@ public class AuthController(
 
         var expiresAt = DateTime.UtcNow.AddHours(1);
 
-        var token = CreateAccessToken(
+        var token = await CreateAccessTokenAsync(
             user,
             roles,
             expiresAt,
@@ -406,7 +406,10 @@ public class AuthController(
     {
         var currentUserId = GetCurrentUserId();
 
-        if (currentUserId == id)
+        if (string.Equals(
+            currentUserId,
+            id,
+            StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest(new RestResponse
             {
@@ -463,7 +466,7 @@ public class AuthController(
         }
     }
 
-    private string CreateAccessToken(
+    private async Task<string> CreateAccessTokenAsync(
         IdentityUser user,
         IEnumerable<string> roles,
         DateTime expiresAt,
@@ -479,15 +482,24 @@ public class AuthController(
         var audience = configuration["Jwt:Audience"]
             ?? "FoxtrotStoreClient";
 
-        var claims = new List<Claim>
-        {
-            new(JwtRegisteredClaimNames.Sub, user.Id),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new("unique_name", user.UserName ?? string.Empty),
-            new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty)
-        };
+        var securityStamp =
+            await userManager.GetSecurityStampAsync(user);
 
-        // Only add locale when the user has explicitly saved it.
+        if (string.IsNullOrWhiteSpace(securityStamp))
+        {
+            throw new InvalidOperationException(
+                "User security stamp is not configured.");
+        }
+
+        var claims = new List<Claim>
+    {
+        new(JwtRegisteredClaimNames.Sub, user.Id),
+        new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+        new("unique_name", user.UserName ?? string.Empty),
+        new(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+        new("security_stamp", securityStamp)
+    };
+
         if (!string.IsNullOrWhiteSpace(locale))
         {
             claims.Add(new Claim("locale", locale));

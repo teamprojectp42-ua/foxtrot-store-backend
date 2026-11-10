@@ -167,6 +167,14 @@ public class CartController(DataAccessor dataAccessor) : ControllerBase
                 "DELETE"));
         }
 
+        if (productId == Guid.Empty)
+        {
+            return BadRequest(CreateResponse(
+                RestStatus.BadRequest,
+                new { message = "ProductId cannot be empty." },
+                "DELETE"));
+        }
+
         var cart = await _dataAccessor.RemoveCartItemAsync(
             userId,
             productId,
